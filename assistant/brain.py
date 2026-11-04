@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .config import BrainSettings
 from .weather import WeatherReport
@@ -23,19 +23,45 @@ PERSONA = (
     "Keep replies short and natural."
 )
 
+# The day is split into three time frames, each with its own greeting.
+# (name, first hour, end hour, greeting)
+TIME_FRAMES = (
+    ("morning", 3, 11, "Good morning"),
+    ("afternoon", 11, 18, "Good afternoon"),
+    ("evening", 18, 3, "Good evening"),  # runs past midnight until 3am
+)
+GREETINGS = {name: greeting for name, _, _, greeting in TIME_FRAMES}
+NO_WEATHER = "I'm afraid I can't reach the weather service at the moment."
+
 
 class BrainError(RuntimeError):
     pass
 
 
 def time_of_day(now: datetime) -> str:
-    if now.hour < 5:
-        return "night"
-    if now.hour < 12:
+    """'morning' (3am-11am), 'afternoon' (11am-6pm) or 'evening' (6pm-3am)."""
+    if 3 <= now.hour < 11:
         return "morning"
-    if now.hour < 18:
+    if 11 <= now.hour < 18:
         return "afternoon"
     return "evening"
+
+
+def frame_start(now: datetime) -> datetime:
+    """When the current time frame began, e.g. 6pm yesterday at 1am.
+
+    This tells one evening apart from the next, even if the computer slept
+    in between.
+    """
+    hour = {"morning": 3, "afternoon": 11, "evening": 18}[time_of_day(now)]
+    start = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+    if start > now:  # after midnight: the evening started yesterday
+        start -= timedelta(days=1)
+    return start
+
+
+def standard_greeting(period: str, name: str = "") -> str:
+    return GREETINGS[period] + (f", {name}" if name else "") + "."
 
 
 class ClaudeBrain:
@@ -86,38 +112,16 @@ class ClaudeBrain:
             raise BrainError(f"Claude didn't answer (exit {result.returncode}): {detail}")
         return reply
 
-    def greeting(self, name: str, weather: WeatherReport | None, now: datetime) -> str:
-        """Ask Claude for a spoken greeting plus a weather briefing."""
-        who = f"The user's name is {name}." if name else "You don't know the user's name."
-        if weather:
-            weather_part = (
-                "Here is today's weather as JSON:\n"
-                f"{json.dumps(weather.as_dict())}\n"
-                "Give a quick weather briefing: what it's like now, today's high and "
-                "low, and the chance of rain, plus one practical tip (umbrella, coat, "
-                "sunglasses...)."
-            )
-        else:
-            weather_part = (
-                "The weather service couldn't be reached, so apologise briefly that "
-                "you can't give the weather right now."
-            )
+    def weather_briefing(self, weather: WeatherReport, now: datetime) -> str:
+        """Ask Claude for a short spoken weather briefing (no greeting)."""
+        period = time_of_day(now)
         prompt = (
-            # No clock time: the greeting may be prepared a few minutes early.
-            f"The user just woke you up by clapping twice. It is {now:%A} "
-            f"{time_of_day(now)}. {who}\n"
-            "Greet them warmly for the time of day.\n"
-            f"{weather_part}\n"
-            "Keep the whole thing to three or four sentences."
+            f"You have just greeted the user with '{GREETINGS[period]}'. Do not greet "
+            f"them again. It is {now:%A} {period}.\n"
+            "Here is the weather as JSON:\n"
+            f"{json.dumps(weather.as_dict())}\n"
+            f"Give a quick weather briefing for the {period}: what it's like, the high "
+            "and low, and the chance of rain, plus one practical tip (umbrella, coat, "
+            "sunglasses...). Two or three sentences."
         )
         return self.ask(prompt)
-
-
-def fallback_greeting(name: str, weather: WeatherReport | None, now: datetime) -> str:
-    """Used when Claude can't be reached, so the assistant still says something."""
-    hello = f"Good {time_of_day(now)}" + (f", {name}" if name else "") + "."
-    if time_of_day(now) == "night":
-        hello = "Hello" + (f", {name}" if name else "") + ", you're up late."
-    if weather:
-        return f"{hello} {weather.summary()}"
-    return f"{hello} I'm afraid I can't reach the weather service at the moment."

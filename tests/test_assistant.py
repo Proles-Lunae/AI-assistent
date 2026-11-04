@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from assistant.brain import fallback_greeting, time_of_day
+from assistant.brain import frame_start, standard_greeting, time_of_day
 from assistant.clap_detector import DoubleClapDetector
 from assistant.config import ClapSettings, load_config
 from assistant.voice import pick_british_female
@@ -68,24 +68,34 @@ def test_triggers_again_after_cooldown():
     assert len(run(gap(1) + pair + gap(4) + pair + gap(0.5))) == 2
 
 
-def test_time_of_day():
-    assert time_of_day(datetime(2026, 1, 1, 8)) == "morning"
-    assert time_of_day(datetime(2026, 1, 1, 14)) == "afternoon"
-    assert time_of_day(datetime(2026, 1, 1, 20)) == "evening"
-    assert time_of_day(datetime(2026, 1, 1, 2)) == "night"
+def test_time_frames():
+    day = lambda h, m=0: datetime(2026, 1, 1, h, m)
+    assert time_of_day(day(3)) == "morning"
+    assert time_of_day(day(10, 59)) == "morning"
+    assert time_of_day(day(11)) == "afternoon"
+    assert time_of_day(day(17, 59)) == "afternoon"
+    assert time_of_day(day(18)) == "evening"
+    assert time_of_day(day(0, 30)) == "evening"
+    assert time_of_day(day(2, 59)) == "evening"
 
 
-def test_fallback_greeting_mentions_weather():
+def test_frame_start():
+    assert frame_start(datetime(2026, 1, 2, 9, 30)) == datetime(2026, 1, 2, 3)
+    assert frame_start(datetime(2026, 1, 2, 15)) == datetime(2026, 1, 2, 11)
+    assert frame_start(datetime(2026, 1, 2, 21)) == datetime(2026, 1, 2, 18)
+    # After midnight the evening is the one that started yesterday.
+    assert frame_start(datetime(2026, 1, 2, 1)) == datetime(2026, 1, 1, 18)
+
+
+def test_standard_greeting():
+    assert standard_greeting("morning") == "Good morning."
+    assert standard_greeting("evening", "Luca") == "Good evening, Luca."
+
+
+def test_weather_summary():
     report = WeatherReport("London", "light rain", 11.2, 9.0, 13.0, 7.5, 80, 15.0, "°C", "km/h")
-    text = fallback_greeting("Luca", report, datetime(2026, 1, 1, 8))
-    assert text.startswith("Good morning, Luca.")
+    text = report.summary()
     assert "light rain" in text and "80 percent" in text
-
-
-def test_fallback_greeting_without_weather():
-    text = fallback_greeting("", None, datetime(2026, 1, 1, 19))
-    assert text.startswith("Good evening.")
-    assert "weather" in text
 
 
 def test_pick_british_female_prefers_british_female():
@@ -99,7 +109,8 @@ def test_pick_british_female_prefers_british_female():
 
 def test_load_config_overrides(tmp_path):
     path = tmp_path / "config.toml"
-    path.write_text('[user]\nname = "Luca"\n[clap]\ncooldown = 5\n')
+    path.write_text('[user]\nname = "Luca"\n[clap]\ncooldown = 5\n'
+                    '[briefing]\nrefresh_minutes = 20\n')  # old setting: ignored
     config = load_config(path)
     assert config.user.name == "Luca"
     assert config.clap.cooldown == 5.0

@@ -80,21 +80,28 @@ speakers ◄── voice.py (British voice) ◄── brain.py (claude -p, your 
 | --- | --- |
 | `assistant/clap_detector.py` | Spots short, sharp sounds and checks the gap between two of them |
 | `assistant/weather.py` | Finds your city and fetches the current weather and today's forecast |
-| `assistant/brain.py` | Asks Claude for a short spoken greeting and weather briefing |
+| `assistant/brain.py` | Time frames, standard greetings, and asking Claude for the weather briefing |
 | `assistant/voice.py` | Turns text into speech and plays it |
 | `assistant/main.py` | Ties everything together and handles the command options |
 | `assistant/config.py` | Default settings, and loading `config.toml` |
 
-**Instant replies:** asking Claude and making the audio takes several seconds, so
-`assistant/briefing.py` does it ahead of time, in the background. When you clap,
-the finished greeting plays straight away. It's remade after each use, every 20
-minutes (`refresh_minutes` in `config.toml`), and when the time of day changes.
-Each remake is one Claude request; set `prepare_ahead = false` to only ask Claude
-when you clap. Right after starting, before the first greeting is ready, she says
-"One moment, let me check the weather" and the greeting follows.
+**Greetings and time frames:** the day has three time frames, each with its own
+standard greeting:
 
-If Claude can't be reached, the assistant still greets you with a simple built-in
-message. If the online voice can't be reached, it falls back to your computer's
+| Time frame | Greeting |
+| --- | --- |
+| 3am – 11am | Good morning |
+| 11am – 6pm | Good afternoon |
+| 6pm – 3am | Good evening |
+
+The audio for all three greetings is made when the assistant starts, so the
+greeting plays the instant you clap. The weather briefing that follows is written
+by Claude once per time frame, in the background (`assistant/briefing.py`), and
+reused for every clap in that frame. That's at most three Claude requests a day.
+Set `prepare_ahead = false` under `[briefing]` to ask Claude on every clap instead.
+
+If Claude can't be reached, the assistant still gives you a simple built-in
+weather report. If the online voice can't be reached, it falls back to your computer's
 own voices (`pyttsx3`).
 
 ## Tests

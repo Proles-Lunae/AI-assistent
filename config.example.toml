@@ -25,5 +25,4 @@ model = ""                # empty = Claude Code's default
 timeout = 60
 
 [briefing]
-prepare_ahead = true      # get the next greeting ready in advance, so it plays instantly
-refresh_minutes = 20      # remake it this often; each remake is one Claude request
+prepare_ahead = true      # make the weather briefing once per time frame, ahead of time

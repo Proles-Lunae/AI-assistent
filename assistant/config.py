@@ -57,11 +57,10 @@ class BrainSettings:
 
 @dataclass
 class BriefingSettings:
-    # Prepare the next greeting in the background so it plays the moment you clap.
+    # Prepare the weather briefing in the background, once per time frame
+    # (morning 3am-11am, afternoon 11am-6pm, evening 6pm-3am), so it plays
+    # the moment you clap.
     prepare_ahead: bool = True
-    # Make a fresh greeting (new weather, new wording) after this many minutes.
-    # Each refresh is one Claude request; raise this to use fewer.
-    refresh_minutes: float = 20.0
 
 
 @dataclass
@@ -78,7 +77,9 @@ def _apply(section: object, values: dict) -> None:
     known = {f.name: f for f in fields(section)}
     for key, value in values.items():
         if key not in known:
-            raise ValueError(f"Unknown setting '{key}' in [{type(section).__name__}]")
+            # Warn rather than crash, so old config files keep working.
+            print(f"(Ignoring unknown setting '{key}' in config.toml)")
+            continue
         current = getattr(section, key)
         # Allow ints in the file where floats are expected (e.g. cooldown = 3).
         if isinstance(current, float) and isinstance(value, int):
