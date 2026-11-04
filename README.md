@@ -57,15 +57,24 @@ You need **Python 3.11 or newer**, a microphone, speakers, and
 | `python -m assistant --now` | Greet you once right away, without clapping |
 | `python -m assistant --say "Hello there"` | Speak some text, to test the voice |
 | `python -m assistant --levels` | Show microphone loudness, to tune clap detection |
+| `python -m assistant --devices` | List the microphones |
 
 Press **Ctrl+C** to stop.
 
 ## Tuning the clap detection
 
-If claps are missed, or other noises set it off, run `python -m assistant --levels`
-and clap a few times. Each clap shows as a number between 0 and 1. In `config.toml`,
-set `threshold` under `[clap]` a bit below your typical clap and above everyday
-noise like talking or typing.
+While it's listening, each clap it hears prints `clap heard (loudness 0.45)`.
+If you clap and nothing prints at all, it isn't hearing you:
+
+1. Run `python -m assistant --levels`, stay quiet a moment, then clap a few times.
+   Each line shows how loud the microphone is, and `CLAP` / `DOUBLE CLAP` show what
+   the detector makes of it. At the end it suggests a `threshold` if your claps
+   were too quiet.
+2. If the levels stay at `0.00`, the microphone is sending silence. On Windows go
+   to **Settings > Privacy & security > Microphone** and turn on both
+   "Microphone access" and "Let desktop apps access your microphone".
+3. If the wrong microphone is used, run `python -m assistant --devices` and put
+   the number (or part of the name) as `device` under `[clap]` in `config.toml`.
 
 ## How it works
 

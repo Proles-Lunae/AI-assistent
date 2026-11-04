@@ -17,7 +17,7 @@ from .brain import (
     time_of_day,
 )
 from .briefing import Briefing, BriefingCache
-from .clap_detector import DoubleClapDetector, show_levels
+from .clap_detector import DoubleClapDetector, list_devices, show_levels
 from .config import Config, load_config
 from .voice import Speaker, Speech
 from .weather import get_weather
@@ -102,13 +102,16 @@ def main() -> None:
     parser.add_argument(
         "--levels", action="store_true", help="show microphone levels to tune the clap threshold"
     )
+    parser.add_argument("--devices", action="store_true", help="list the microphones")
     parser.add_argument("--say", metavar="TEXT", help="just speak TEXT (to test the voice)")
     args = parser.parse_args()
 
     config = load_config(args.config)
     assistant = Assistant(config)
     try:
-        if args.levels:
+        if args.devices:
+            list_devices()
+        elif args.levels:
             show_levels(config.clap)
         elif args.say:
             assistant.speaker.say(args.say)

@@ -13,10 +13,13 @@ voice = "en-GB-SoniaNeural"   # other British female voices: en-GB-LibbyNeural, 
 rate = "+0%"                  # speaking speed, e.g. "-10%" slower, "+10%" faster
 
 [clap]
-threshold = 0.35          # raise if it triggers too easily, lower if claps are missed
-noise_ratio = 6.0
+device = ""               # "" = default microphone; see: python -m assistant --devices
+threshold = 0.2           # lower if claps are missed, raise if it triggers too easily
+                          # (find a good value with: python -m assistant --levels)
+noise_ratio = 5.0         # how much louder than background noise a clap must be
+onset_ratio = 3.0         # how sudden a clap must be (filters out speech and music)
 min_gap = 0.15            # seconds allowed between the two claps
-max_gap = 0.8
+max_gap = 0.9
 cooldown = 3.0
 
 [brain]

@@ -34,13 +34,19 @@ class VoiceSettings:
 
 @dataclass
 class ClapSettings:
+    # Microphone: "" = Windows' default, or a number / part of a name
+    # from: python -m assistant --devices
+    device: str = ""
     # Loudness (0.0-1.0) a sound must reach to count as a clap.
-    threshold: float = 0.35
-    # A clap must also be this many times louder than the background noise.
-    noise_ratio: float = 6.0
+    # Find a good value with: python -m assistant --levels
+    threshold: float = 0.2
+    # A clap must also be this many times louder than the background noise...
+    noise_ratio: float = 5.0
+    # ...and this many times louder than a moment before (claps are sudden).
+    onset_ratio: float = 3.0
     # Allowed time between the two claps, in seconds.
     min_gap: float = 0.15
-    max_gap: float = 0.8
+    max_gap: float = 0.9
     # After a double clap, ignore everything for this many seconds.
     cooldown: float = 3.0
     sample_rate: int = 44100

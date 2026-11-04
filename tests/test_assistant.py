@@ -18,22 +18,38 @@ def quiet(rng):
     return rng.normal(0, 0.005, BLOCK).astype(np.float32)
 
 
-def clap(rng):
+def clap(rng, loudness=0.8):
     block = quiet(rng)
     decay = np.exp(-np.arange(300) / 40.0)
-    block[100:400] += (rng.uniform(-1, 1, 300) * 0.8 * decay).astype(np.float32)
+    block[100:400] += (rng.uniform(-1, 1, 300) * loudness * decay).astype(np.float32)
     return block
 
 
-def run(pattern, settings=None):
-    """Feed a pattern of 'c' (clap) and '.' (silence) blocks; return trigger times."""
+def tone(i, loudness=0.5, ramp_blocks=6):
+    """A steady sound (like a voice or music) that fades in over a few blocks."""
+    t = (np.arange(BLOCK) + i * BLOCK) / RATE
+    level = loudness * min(1.0, (i + 1) / ramp_blocks)
+    return (np.sin(2 * np.pi * 220 * t) * level).astype(np.float32)
+
+
+def run(pattern, settings=None, clap_loudness=0.8, noise=None):
+    """Feed blocks: 'c' clap, '.' silence, 't' steady sound. Return trigger times."""
     rng = np.random.default_rng(0)
     detector = DoubleClapDetector(settings or ClapSettings())
     triggers = []
+    tone_blocks = 0
     for i, ch in enumerate(pattern):
-        block = clap(rng) if ch == "c" else quiet(rng)
+        if ch == "c":
+            block = clap(rng, clap_loudness)
+        elif ch == "t":
+            block = tone(tone_blocks)
+            tone_blocks += 1
+        else:
+            block = quiet(rng)
+        if noise:
+            block = block + rng.normal(0, noise, BLOCK).astype(np.float32)
         now = i * BLOCK_SECONDS
-        if detector.process_block(block, now):
+        if detector.process_block(block, now) == "double":
             triggers.append(now)
     return triggers
 
@@ -66,6 +82,33 @@ def test_cooldown_blocks_immediate_retrigger():
 def test_triggers_again_after_cooldown():
     pair = "c" + gap(0.3) + "c"
     assert len(run(gap(1) + pair + gap(4) + pair + gap(0.5))) == 2
+
+
+def test_quiet_double_clap_triggers():
+    # Windows microphones are often set low: a clap may only reach ~0.3.
+    assert len(run(gap(1) + "c" + gap(0.35) + "c" + gap(0.5), clap_loudness=0.3)) == 1
+
+
+def test_double_clap_in_a_noisy_room_triggers():
+    assert len(run(gap(1) + "c" + gap(0.35) + "c" + gap(0.5), noise=0.02)) == 1
+
+
+def test_slow_clapper_triggers():
+    assert len(run(gap(1) + "c" + gap(0.75) + "c" + gap(0.5))) == 1
+
+
+def test_steady_sound_does_not_trigger():
+    # Speech or music: loud, but it builds up and keeps going.
+    assert run(gap(1) + "t" * 80 + gap(1)) == []
+
+
+def test_single_clap_reports_single():
+    rng = np.random.default_rng(0)
+    detector = DoubleClapDetector(ClapSettings())
+    results = [detector.process_block(quiet(rng), i * BLOCK_SECONDS) for i in range(40)]
+    results.append(detector.process_block(clap(rng), 40 * BLOCK_SECONDS))
+    assert results[-1] == "single"
+    assert set(results[:-1]) == {None}
 
 
 def test_time_frames():
