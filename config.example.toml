@@ -1,0 +1,25 @@
+# Copy this file to config.toml and change what you like.
+# Anything you leave out keeps its default.
+
+[user]
+name = ""                 # e.g. "Luca", so the assistant greets you by name
+
+[weather]
+city = "London"
+units = "metric"          # "metric" (°C) or "imperial" (°F)
+
+[voice]
+voice = "en-GB-SoniaNeural"   # other British female voices: en-GB-LibbyNeural, en-GB-MaisieNeural
+rate = "+0%"                  # speaking speed, e.g. "-10%" slower, "+10%" faster
+
+[clap]
+threshold = 0.35          # raise if it triggers too easily, lower if claps are missed
+noise_ratio = 6.0
+min_gap = 0.15            # seconds allowed between the two claps
+max_gap = 0.8
+cooldown = 3.0
+
+[brain]
+command = "claude"        # the Claude Code command; uses your Claude login
+model = ""                # empty = Claude Code's default
+timeout = 60

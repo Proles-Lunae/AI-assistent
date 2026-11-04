@@ -1,0 +1,106 @@
+from datetime import datetime
+from types import SimpleNamespace
+
+import numpy as np
+
+from assistant.brain import fallback_greeting, time_of_day
+from assistant.clap_detector import DoubleClapDetector
+from assistant.config import ClapSettings, load_config
+from assistant.voice import pick_british_female
+from assistant.weather import WeatherReport
+
+BLOCK = 1024
+RATE = 44100
+BLOCK_SECONDS = BLOCK / RATE
+
+
+def quiet(rng):
+    return rng.normal(0, 0.005, BLOCK).astype(np.float32)
+
+
+def clap(rng):
+    block = quiet(rng)
+    decay = np.exp(-np.arange(300) / 40.0)
+    block[100:400] += (rng.uniform(-1, 1, 300) * 0.8 * decay).astype(np.float32)
+    return block
+
+
+def run(pattern, settings=None):
+    """Feed a pattern of 'c' (clap) and '.' (silence) blocks; return trigger times."""
+    rng = np.random.default_rng(0)
+    detector = DoubleClapDetector(settings or ClapSettings())
+    triggers = []
+    for i, ch in enumerate(pattern):
+        block = clap(rng) if ch == "c" else quiet(rng)
+        now = i * BLOCK_SECONDS
+        if detector.process_block(block, now):
+            triggers.append(now)
+    return triggers
+
+
+def gap(seconds):
+    return "." * round(seconds / BLOCK_SECONDS)
+
+
+def test_double_clap_triggers():
+    assert len(run(gap(1) + "c" + gap(0.35) + "c" + gap(0.5))) == 1
+
+
+def test_single_clap_does_not_trigger():
+    assert run(gap(1) + "c" + gap(2)) == []
+
+
+def test_claps_too_far_apart_do_not_trigger():
+    assert run(gap(1) + "c" + gap(1.5) + "c" + gap(1)) == []
+
+
+def test_silence_does_not_trigger():
+    assert run(gap(5)) == []
+
+
+def test_cooldown_blocks_immediate_retrigger():
+    pattern = gap(1) + "c" + gap(0.3) + "c" + gap(0.5) + "c" + gap(0.3) + "c"
+    assert len(run(pattern)) == 1
+
+
+def test_triggers_again_after_cooldown():
+    pair = "c" + gap(0.3) + "c"
+    assert len(run(gap(1) + pair + gap(4) + pair + gap(0.5))) == 2
+
+
+def test_time_of_day():
+    assert time_of_day(datetime(2026, 1, 1, 8)) == "morning"
+    assert time_of_day(datetime(2026, 1, 1, 14)) == "afternoon"
+    assert time_of_day(datetime(2026, 1, 1, 20)) == "evening"
+    assert time_of_day(datetime(2026, 1, 1, 2)) == "night"
+
+
+def test_fallback_greeting_mentions_weather():
+    report = WeatherReport("London", "light rain", 11.2, 9.0, 13.0, 7.5, 80, 15.0, "°C", "km/h")
+    text = fallback_greeting("Luca", report, datetime(2026, 1, 1, 8))
+    assert text.startswith("Good morning, Luca.")
+    assert "light rain" in text and "80 percent" in text
+
+
+def test_fallback_greeting_without_weather():
+    text = fallback_greeting("", None, datetime(2026, 1, 1, 19))
+    assert text.startswith("Good evening.")
+    assert "weather" in text
+
+
+def test_pick_british_female_prefers_british_female():
+    voices = [
+        SimpleNamespace(id="us-david", name="David", languages=["en_US"], gender="male"),
+        SimpleNamespace(id="gb-george", name="George", languages=["en_GB"], gender="male"),
+        SimpleNamespace(id="gb-hazel", name="Hazel", languages=["en_GB"], gender="female"),
+    ]
+    assert pick_british_female(voices).id == "gb-hazel"
+
+
+def test_load_config_overrides(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[user]\nname = "Luca"\n[clap]\ncooldown = 5\n')
+    config = load_config(path)
+    assert config.user.name == "Luca"
+    assert config.clap.cooldown == 5.0
+    assert config.weather.city == "London"  # untouched default

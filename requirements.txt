@@ -1,0 +1,6 @@
+numpy>=1.26
+sounddevice>=0.4.6
+edge-tts>=6.1
+miniaudio>=1.59
+# Optional offline voice, used if the online voice can't be reached:
+pyttsx3>=2.90
