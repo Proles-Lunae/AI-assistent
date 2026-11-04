@@ -13,7 +13,8 @@ voice = "en-GB-SoniaNeural"   # other British female voices: en-GB-LibbyNeural, 
 rate = "+0%"                  # speaking speed, e.g. "-10%" slower, "+10%" faster
 
 [clap]
-device = ""               # "" = default microphone; see: python -m assistant --devices
+device = ""               # "" = default microphone, or part of its name, e.g. "PD200X"
+                          # (see the list with: python -m assistant --devices)
 threshold = 0.2           # lower if claps are missed, raise if it triggers too easily
                           # (find a good value with: python -m assistant --levels)
 noise_ratio = 5.0         # how much louder than background noise a clap must be

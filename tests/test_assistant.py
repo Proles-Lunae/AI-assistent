@@ -187,3 +187,43 @@ def test_certificate_error_gets_a_clear_message(monkeypatch):
     monkeypatch.setattr(weather.urllib.request, "urlopen", fail)
     with pytest.raises(ConnectionError, match="date and time"):
         weather.find_city("London")
+
+
+WINDOWS_DEVICES = [
+    {"name": "Microsoft Sound Mapper - Input", "max_input_channels": 2, "hostapi": 0},
+    {"name": "Mikrofon (Webcam)", "max_input_channels": 1, "hostapi": 0},
+    {"name": "Mikrofon (PD200X Podcast Microp", "max_input_channels": 1, "hostapi": 0},
+    {"name": "Lautsprecher (Realtek)", "max_input_channels": 0, "hostapi": 0},
+    {"name": "Mikrofon (PD200X Podcast Microphone)", "max_input_channels": 1, "hostapi": 1},
+    {"name": "Mikrofon (PD200X Podcast Microphone)", "max_input_channels": 1, "hostapi": 2},
+]
+
+
+def pick(device, default_hostapi=0):
+    from assistant.clap_detector import input_device
+
+    return input_device(ClapSettings(device=device), WINDOWS_DEVICES, default_hostapi)
+
+
+def test_device_by_name_picks_one_entry_on_the_default_audio_system():
+    assert pick("PD200X") == 2
+    assert pick("pd200x", default_hostapi=2) == 5  # case doesn't matter
+
+
+def test_device_by_number_and_default():
+    assert pick("2") == 2
+    assert pick("") is None
+
+
+def test_unknown_device_explains_how_to_list():
+    import pytest
+
+    with pytest.raises(ValueError, match="--devices"):
+        pick("Blue Yeti")
+
+
+def test_speakers_are_not_picked_as_microphone():
+    import pytest
+
+    with pytest.raises(ValueError):
+        pick("Realtek")

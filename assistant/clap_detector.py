@@ -122,12 +122,37 @@ SILENCE_HELP = """
 """
 
 
-def input_device(settings: ClapSettings):
-    """The device from config.toml: '' = system default, a number, or part of a name."""
+def input_device(settings: ClapSettings, devices=None, default_hostapi=None):
+    """The device from config.toml: '' = system default, a number, or part of a name.
+
+    Windows lists each microphone several times (once per audio system: MME,
+    DirectSound, WASAPI...), so a name usually matches more than one entry.
+    Pick the one on the default audio system, else the first match.
+    """
     device = str(settings.device).strip()
     if not device:
         return None
-    return int(device) if device.isdigit() else device
+    if device.isdigit():
+        return int(device)
+    if devices is None:
+        import sounddevice as sd
+
+        devices = sd.query_devices()
+        default_hostapi = sd.default.hostapi
+    wanted = device.lower()
+    matches = [
+        i
+        for i, d in enumerate(devices)
+        if d["max_input_channels"] > 0 and wanted in d["name"].lower()
+    ]
+    if not matches:
+        raise ValueError(
+            f"No microphone matches '{device}'. See the list with: python -m assistant --devices"
+        )
+    for i in matches:
+        if devices[i].get("hostapi") == default_hostapi:
+            return i
+    return matches[0]
 
 
 def device_name(device) -> str:
