@@ -47,15 +47,18 @@ class ClaudeBrain:
 
     def ask(self, prompt: str) -> str:
         """Send one prompt to Claude and return its reply as text."""
-        if not self.available():
+        # Full path, so Windows finds claude.exe or claude.cmd.
+        command = shutil.which(self.s.command)
+        if command is None:
             raise BrainError(
                 f"Can't find the '{self.s.command}' command. Install Claude Code and "
                 "run 'claude' once to log in."
             )
+        # The prompt goes in through stdin, not as an argument: on Windows a
+        # multi-line argument gets cut off when claude is a .cmd script.
         cmd = [
-            self.s.command,
+            command,
             "-p",
-            prompt,
             "--system-prompt",
             PERSONA,
             "--tools",
@@ -68,7 +71,12 @@ class ClaudeBrain:
             cmd += ["--model", self.s.model]
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=self.s.timeout
+                cmd,
+                input=prompt,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=self.s.timeout,
             )
         except subprocess.TimeoutExpired as exc:
             raise BrainError("Claude took too long to answer") from exc

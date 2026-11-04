@@ -21,11 +21,24 @@ You need **Python 3.11 or newer**, a microphone, speakers, and
    cd AI-assistent
    ```
 
-2. Create a virtual environment and install the packages:
+2. Create a virtual environment and install the packages.
+
+   **Windows (Command Prompt):**
+
+   ```bat
+   py -m venv .venv
+   .venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+   If `py` isn't found, install Python from https://www.python.org/downloads/ and
+   tick **"Add python.exe to PATH"** during setup.
+
+   **Mac / Linux:**
 
    ```bash
    python3 -m venv .venv
-   source .venv/bin/activate        # Windows: .venv\Scripts\activate
+   source .venv/bin/activate
    pip install -r requirements.txt
    ```
 
