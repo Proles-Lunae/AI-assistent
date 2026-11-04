@@ -115,3 +115,32 @@ def test_load_config_overrides(tmp_path):
     assert config.user.name == "Luca"
     assert config.clap.cooldown == 5.0
     assert config.weather.city == "London"  # untouched default
+
+
+def test_weather_uses_certifi_certificates():
+    import certifi
+
+    from assistant.weather import ssl_context
+
+    context = ssl_context()
+    assert context.verify_mode.name == "CERT_REQUIRED"
+    assert context.cert_store_stats()["x509_ca"] > 50  # loaded certifi's list
+    assert certifi.where()
+
+
+def test_certificate_error_gets_a_clear_message(monkeypatch):
+    import ssl
+    import urllib.error
+
+    import pytest
+
+    from assistant import weather
+
+    def fail(*args, **kwargs):
+        err = ssl.SSLCertVerificationError(1, "certificate verify failed")
+        err.verify_message = "certificate has expired"
+        raise urllib.error.URLError(err)
+
+    monkeypatch.setattr(weather.urllib.request, "urlopen", fail)
+    with pytest.raises(ConnectionError, match="date and time"):
+        weather.find_city("London")

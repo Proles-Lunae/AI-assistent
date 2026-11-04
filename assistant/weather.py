@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import ssl
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -69,11 +71,34 @@ class WeatherReport:
         )
 
 
+def ssl_context() -> ssl.SSLContext:
+    """Check HTTPS certificates against certifi's up-to-date list.
+
+    Windows' own certificate list can be out of date, which makes Python
+    report "certificate has expired". certifi is the same list the voice
+    (edge-tts) uses.
+    """
+    try:
+        import certifi
+    except ImportError:
+        return ssl.create_default_context()
+    return ssl.create_default_context(cafile=certifi.where())
+
+
 def _get_json(url: str, params: dict, timeout: float = 10.0) -> dict:
     full_url = f"{url}?{urllib.parse.urlencode(params)}"
     request = urllib.request.Request(full_url, headers={"User-Agent": "voice-assistant/1.0"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.load(response)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout, context=ssl_context()) as response:
+            return json.load(response)
+    except urllib.error.URLError as exc:
+        if isinstance(exc.reason, ssl.SSLCertVerificationError):
+            raise ConnectionError(
+                f"secure connection to the weather service failed ({exc.reason.verify_message}). "
+                "Check that your computer's date and time are correct; antivirus "
+                "'HTTPS scanning' or a company network can also cause this."
+            ) from exc
+        raise
 
 
 def find_city(city: str) -> tuple[float, float, str]:
