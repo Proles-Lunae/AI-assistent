@@ -23,3 +23,7 @@ cooldown = 3.0
 command = "claude"        # the Claude Code command; uses your Claude login
 model = ""                # empty = Claude Code's default
 timeout = 60
+
+[briefing]
+prepare_ahead = true      # get the next greeting ready in advance, so it plays instantly
+refresh_minutes = 20      # remake it this often; each remake is one Claude request

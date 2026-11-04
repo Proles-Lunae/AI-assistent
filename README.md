@@ -85,6 +85,14 @@ speakers ◄── voice.py (British voice) ◄── brain.py (claude -p, your 
 | `assistant/main.py` | Ties everything together and handles the command options |
 | `assistant/config.py` | Default settings, and loading `config.toml` |
 
+**Instant replies:** asking Claude and making the audio takes several seconds, so
+`assistant/briefing.py` does it ahead of time, in the background. When you clap,
+the finished greeting plays straight away. It's remade after each use, every 20
+minutes (`refresh_minutes` in `config.toml`), and when the time of day changes.
+Each remake is one Claude request; set `prepare_ahead = false` to only ask Claude
+when you clap. Right after starting, before the first greeting is ready, she says
+"One moment, let me check the weather" and the greeting follows.
+
 If Claude can't be reached, the assistant still greets you with a simple built-in
 message. If the online voice can't be reached, it falls back to your computer's
 own voices (`pyttsx3`).

@@ -8,10 +8,24 @@ If that fails, falls back to the voices built into your computer via
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
+from typing import Any
 
 from .config import VoiceSettings
 
 SAMPLE_RATE = 24000
+
+
+@dataclass
+class Speech:
+    """Text that's ready to be played straight away.
+
+    ``samples`` holds the finished audio. It's None when the online voice
+    couldn't be reached; the offline voice then speaks the text at play time.
+    """
+
+    text: str
+    samples: Any = None
 
 
 class Speaker:
@@ -19,12 +33,28 @@ class Speaker:
         self.s = settings
 
     def say(self, text: str) -> None:
-        print(f"Assistant: {text}")
+        self.play(self.prepare(text))
+
+    def prepare(self, text: str) -> Speech:
+        """Do the slow part (making the audio) ahead of time."""
         try:
-            self._say_online(text)
-        except Exception as exc:  # network down, voice service changed, no audio device...
-            print(f"(Online voice failed: {exc}. Trying the offline voice.)")
-            self._say_offline(text)
+            return Speech(text, self._render(text))
+        except Exception as exc:  # network down, voice service changed...
+            print(f"(Online voice failed: {exc}. Will use the offline voice.)")
+            return Speech(text)
+
+    def play(self, speech: Speech) -> None:
+        print(f"Assistant: {speech.text}")
+        if speech.samples is not None:
+            try:
+                import sounddevice as sd
+
+                sd.play(speech.samples, SAMPLE_RATE)
+                sd.wait()
+                return
+            except Exception as exc:  # no audio device...
+                print(f"(Couldn't play audio: {exc}. Trying the offline voice.)")
+        self._say_offline(speech.text)
 
     def synthesize(self, text: str) -> bytes:
         """Turn text into MP3 bytes with the neural voice."""
@@ -43,10 +73,10 @@ class Speaker:
             raise RuntimeError("the voice service returned no audio")
         return audio
 
-    def _say_online(self, text: str) -> None:
+    def _render(self, text: str):
+        """Make the neural-voice audio and decode it, ready for the speakers."""
         import miniaudio
         import numpy as np
-        import sounddevice as sd
 
         mp3 = self.synthesize(text)
         decoded = miniaudio.decode(
@@ -55,9 +85,7 @@ class Speaker:
             nchannels=1,
             sample_rate=SAMPLE_RATE,
         )
-        samples = np.frombuffer(decoded.samples, dtype=np.int16)
-        sd.play(samples, SAMPLE_RATE)
-        sd.wait()
+        return np.frombuffer(decoded.samples, dtype=np.int16)
 
     def _say_offline(self, text: str) -> None:
         try:

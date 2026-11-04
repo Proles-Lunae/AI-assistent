@@ -56,7 +56,17 @@ class BrainSettings:
 
 
 @dataclass
+class BriefingSettings:
+    # Prepare the next greeting in the background so it plays the moment you clap.
+    prepare_ahead: bool = True
+    # Make a fresh greeting (new weather, new wording) after this many minutes.
+    # Each refresh is one Claude request; raise this to use fewer.
+    refresh_minutes: float = 20.0
+
+
+@dataclass
 class Config:
+    briefing: BriefingSettings = field(default_factory=BriefingSettings)
     user: UserSettings = field(default_factory=UserSettings)
     weather: WeatherSettings = field(default_factory=WeatherSettings)
     voice: VoiceSettings = field(default_factory=VoiceSettings)

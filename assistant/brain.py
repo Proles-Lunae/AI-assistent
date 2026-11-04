@@ -103,8 +103,9 @@ class ClaudeBrain:
                 "you can't give the weather right now."
             )
         prompt = (
-            f"The user just woke you up by clapping twice. It is {now:%A}, "
-            f"{now:%H:%M} in the {time_of_day(now)}. {who}\n"
+            # No clock time: the greeting may be prepared a few minutes early.
+            f"The user just woke you up by clapping twice. It is {now:%A} "
+            f"{time_of_day(now)}. {who}\n"
             "Greet them warmly for the time of day.\n"
             f"{weather_part}\n"
             "Keep the whole thing to three or four sentences."
