@@ -2,14 +2,16 @@
 # Anything you leave out keeps its default.
 
 [user]
-name = "sir"              # what she calls you: "Good morning, sir."
+name = "sir"              # what she calls you: "Guten Abend, Sir."
+language = "de"           # the language she speaks and understands: "de" or "en"
 
 [weather]
 city = ""                 # "" = find your location automatically, or a city like "Berlin"
 units = "metric"          # "metric" (°C) or "imperial" (°F)
 
 [voice]
-voice = "en-GB-SoniaNeural"   # other British female voices: en-GB-LibbyNeural, en-GB-MaisieNeural
+voice = ""                    # "" = the usual voice for her language (German: Katja);
+                              # or e.g. "de-DE-AmalaNeural", "en-GB-LibbyNeural"
 rate = "+0%"                  # speaking speed, e.g. "-10%" slower, "+10%" faster
 
 [clap]
@@ -25,11 +27,12 @@ cooldown = 3.0
 
 [listen]
 enabled = true            # after greeting you, listen for a question and answer it
-model = "base"            # speech recognition: "tiny" (fastest), "base", "small" (most accurate)
-language = "en"           # the language you speak; "" = detect it
+model = "small"           # speech recognition: "tiny", "base", "small", "medium" (bigger =
+                          # more accurate but slower; small downloads about 460 MB once)
+language = ""             # "" = same as [user] language; "auto" = detect it
 end_after_quiet = 0       # 0 = keep talking until you say "stop" or "goodbye";
                           # or a number of seconds of quiet after which she stops
-silence_seconds = 1.0     # this much quiet means you've finished
+silence_seconds = 1.2     # this much quiet means you've finished
 max_seconds = 15.0        # longest question
 speech_ratio = 3.0        # how much louder than the room your voice must be...
 min_level = 0.006         # ...and how loud at least; lower it if she doesn't hear you

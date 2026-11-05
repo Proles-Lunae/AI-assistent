@@ -43,6 +43,8 @@ def frame_end(when: datetime) -> datetime:
     return end if end > start else end + timedelta(days=1)
 
 
-def standard_greeting(period: str, name: str = "") -> str:
-    """The greeting for a time frame, e.g. 'Good morning, sir.'"""
-    return GREETINGS[period] + (f", {name}" if name else "") + "."
+def standard_greeting(period: str, name: str = "", language: str = "en") -> str:
+    """The greeting for a time frame, e.g. 'Good morning, sir.' or 'Guten Morgen, Sir.'"""
+    from .phrases import phrases_for
+
+    return phrases_for(language).greeting(period, name)

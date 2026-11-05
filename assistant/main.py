@@ -13,29 +13,23 @@ from .brain import BrainError, ClaudeBrain
 from .config import Config, ConfigError, load_config
 from .listening import MicrophoneStopped, Transcriber, drain, record_question
 from .microphone import choose_microphone, list_devices, listen, recording, show_levels
-from .timeframes import GREETINGS, frame_end, frame_start, standard_greeting, time_of_day
+from .phrases import all_goodbye_words, phrases_for
+from .timeframes import GREETINGS, frame_end, frame_start, time_of_day
 from .voice import Speaker, Speech
 from .weather import detect_location, find_city, get_weather
 
-NO_WEATHER = "I'm afraid I can't reach the weather service at the moment."
 WEATHER_WAIT = 15.0  # seconds; after this, give up on the weather for this clap
-DIDNT_CATCH = "Sorry, I didn't catch that."
-NO_BRAIN = "I'm sorry, I can't think straight at the moment. Please try again later."
-GOODBYE = "Very well. Just clap if you need me."
-# Saying one of these (on its own, or in a short sentence) ends the conversation.
-GOODBYE_WORDS = ("thank you", "thanks", "goodbye", "bye", "that's all", "that is all",
-                 "nothing", "no thanks", "stop", "never mind", "go to sleep",
-                 "that's enough", "that will be all", "that'll be all", "you can go")
 
 
 class Assistant:
     def __init__(self, config: Config):
         self.config = config
-        self.speaker = Speaker(config.voice)
+        self.words = phrases_for(config.user.language)  # everything she says, in her language
+        self.speaker = Speaker(config.voice, self.words.code, self.words.voice)
         self._ready: dict[str, Speech] = {}  # greetings and the no-weather line, by text
         self._pool = ThreadPoolExecutor(max_workers=2)
         self.brain = ClaudeBrain(config.brain)
-        self.transcriber = Transcriber(config.listen)
+        self.transcriber = Transcriber(config.listen, self.words.code, self.words.whisper_prompt)
 
     def recording(self, text: str) -> Speech:
         """The recording of a fixed sentence, made once and then reused."""
@@ -51,20 +45,20 @@ class Assistant:
             weather = get_weather(settings.city, settings.units, start, frame_end(start))
         except Exception as exc:
             print(f"(Couldn't get the weather: {exc})")
-            return self.recording(NO_WEATHER)
-        return self.speaker.prepare(weather.spoken(time_of_day(now)))
+            return self.recording(self.words.no_weather)
+        return self.speaker.prepare(weather.spoken(time_of_day(now), self.words.code))
 
     def wake_up(self) -> None:
         """Greet at once; the weather is checked fresh while the greeting plays."""
         now = datetime.now()
         weather = self._pool.submit(self.weather_speech, now)
-        greeting = standard_greeting(time_of_day(now), self.config.user.address())
+        greeting = self.words.greeting(time_of_day(now), self.config.user.address())
         self.speaker.play(self.recording(greeting), wait=False)
         try:
             speech = weather.result(timeout=WEATHER_WAIT)
         except Exception as exc:
             print(f"(The weather took too long: {exc})")
-            speech = self.recording(NO_WEATHER)
+            speech = self.recording(self.words.no_weather)
         self.speaker.finish()  # let the greeting end, then carry straight on
         self.speaker.play(speech)
 
@@ -99,19 +93,20 @@ class Assistant:
                 return
             ready_beep = True
             if not question:
-                self.speaker.play(self.recording(DIDNT_CATCH))
+                self.speaker.play(self.recording(self.words.didnt_catch))
                 continue
             print(f"You: {question}")
             if is_goodbye(question):
-                self.speaker.play(self.recording(GOODBYE))
+                self.speaker.play(self.recording(self.words.goodbye))
                 return
             print("(Thinking...)")
             try:
                 answer = self.brain.answer(question, history, self.context(),
-                                           self.config.user.address())
+                                           self.config.user.address(),
+                                           self.words.claude_instruction)
             except BrainError as exc:
                 print(f"(Claude couldn't answer: {exc})")
-                self.speaker.play(self.recording(NO_BRAIN))
+                self.speaker.play(self.recording(self.words.no_brain))
                 continue  # she can still be asked again, or told to stop
             history.append((question, answer))
             self.speaker.say(answer)
@@ -131,8 +126,9 @@ class Assistant:
         """Make the fixed recordings and find your location before the first clap."""
         name = self.config.user.address()
         for period in GREETINGS:
-            self.recording(standard_greeting(period, name))
-        for line in (NO_WEATHER, DIDNT_CATCH, NO_BRAIN, GOODBYE):
+            self.recording(self.words.greeting(period, name))
+        w = self.words
+        for line in (w.no_weather, w.didnt_catch, w.no_brain, w.goodbye):
             self.recording(line)
         try:
             city = self.config.weather.city.strip()
@@ -177,7 +173,7 @@ def is_goodbye(text: str) -> bool:
     words = "".join(c if c.isalnum() or c in " '" else " " for c in text.lower()).split()
     short = " ".join(words)
     return len(words) <= 5 and any(
-        f" {phrase} " in f" {short} " for phrase in GOODBYE_WORDS)
+        f" {phrase} " in f" {short} " for phrase in all_goodbye_words())
 
 
 def main() -> None:

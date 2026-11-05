@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import cache
 
+from .phrases import phrases_for
+
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 # Free services that estimate your location from your internet connection.
@@ -31,18 +33,6 @@ WEATHER_CODES = {
 
 RAIN_MENTION_ABOVE = 20  # percent
 
-# Tips by temperature in °C: the first line whose limit the temperature is at
-# or below is used. Easy to change: edit the wording or the limits here.
-TIPS = (
-    (0, "It's freezing, so wrap up warm and mind the ice."),
-    (7, "A warm coat would be a good idea."),
-    (14, "A jacket should do."),
-    (22, "A light jumper should be plenty."),
-    (28, "It's warm, so dress lightly."),
-    (float("inf"), "It's hot, so drink plenty of water and stay in the shade."),
-)
-# What to take along with the umbrella when it's likely to rain.
-RAIN_EXTRAS = ((7, " and a warm coat"), (14, " and a jacket"))
 
 
 @dataclass
@@ -63,24 +53,22 @@ class WeatherReport:
         """Only worth saying when the chance of rain is over 20 percent."""
         return self.rain_chance > RAIN_MENTION_ABOVE
 
-    def spoken(self, period: str) -> str:
+    def spoken(self, period: str, language: str = "en") -> str:
         """What she says after the greeting: "It's 8 degrees outside. A jacket should do."."""
-        t = round(self.temperature)
-        degrees = f"{'minus ' if t < 0 else ''}{abs(t)} degree{'' if abs(t) == 1 else 's'}"
-        return f"It's {degrees} outside. {self.suggestion(period)}"
+        return f"{phrases_for(language).temperature(round(self.temperature))} " \
+               f"{self.suggestion(period, language)}"
 
-    def suggestion(self, period: str) -> str:
+    def suggestion(self, period: str, language: str = "en") -> str:
         """A useful tip for the weather, based on the temperature and the rain."""
+        words = phrases_for(language)
         celsius = self.temperature
         if self.temperature_unit == "°F":
             celsius = (self.temperature - 32) * 5 / 9
         celsius = round(celsius)
         if self.mention_rain:
-            extra = next((item for limit, item in RAIN_EXTRAS if celsius <= limit), "")
-            article = "an" if str(self.rain_chance).startswith("8") else "a"  # an 80, an 85
-            return (f"There's {article} {self.rain_chance} percent chance of rain this {period}, "
-                    f"so take an umbrella{extra}.")
-        return next(tip for limit, tip in TIPS if celsius <= limit)
+            extra = next((item for limit, item in words.rain_extras if celsius <= limit), "")
+            return words.rain(self.rain_chance, period, extra)
+        return next(tip for limit, tip in words.tips if celsius <= limit)
 
 
 @cache  # made once: loading the certificate list takes a few milliseconds each time

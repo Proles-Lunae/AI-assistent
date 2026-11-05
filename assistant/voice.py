@@ -14,8 +14,28 @@ from .config import VoiceSettings
 
 SAMPLE_RATE = 24000
 # Words that mark an offline voice as British, or as female.
-BRITISH_HINTS = ("en_gb", "en-gb", "united kingdom", "british")
-FEMALE_HINTS = ("hazel", "susan", "kate", "serena", "libby", "sonia", "female")
+# How to recognise a fitting offline (pyttsx3) voice, by language.
+LANGUAGE_HINTS = {
+    "en": ("en_gb", "en-gb", "united kingdom", "british"),
+    "de": ("de_de", "de-de", "german", "deutsch"),
+}
+BRITISH_HINTS = LANGUAGE_HINTS["en"]
+FEMALE_HINTS = ("hazel", "susan", "kate", "serena", "libby", "sonia", "katja", "hedda",
+                "amala", "anna", "petra", "marlene", "female")
+
+
+def choose_voice(setting: str, language: str, default_voice: str) -> str:
+    """The neural voice to use: the one set in config.toml, unless it's for a
+    different language than she speaks (e.g. the old British default with
+    German), in which case the usual voice for her language."""
+    setting = setting.strip()
+    if not setting:
+        return default_voice
+    if not setting.lower().startswith(language.lower()[:2] + "-"):
+        print(f"(The voice '{setting}' is for another language; using {default_voice}. "
+              f"Set voice under [voice] to a '{language[:2]}-' voice to choose another.)")
+        return default_voice
+    return setting
 
 
 @dataclass
@@ -31,8 +51,10 @@ class Speech:
 
 
 class Speaker:
-    def __init__(self, settings: VoiceSettings):
+    def __init__(self, settings: VoiceSettings, language: str = "en", default_voice: str = ""):
         self.s = settings
+        self.language = language
+        self.voice = choose_voice(settings.voice, language, default_voice or "en-GB-SoniaNeural")
 
     def say(self, text: str) -> None:
         self.play(self.prepare(text))
@@ -93,7 +115,7 @@ class Speaker:
         import numpy as np
 
         async def download() -> bytes:
-            communicate = edge_tts.Communicate(text, self.s.voice, rate=self.s.rate)
+            communicate = edge_tts.Communicate(text, self.voice, rate=self.s.rate)
             chunks = [c["data"] async for c in communicate.stream() if c["type"] == "audio"]
             return b"".join(chunks)
 
@@ -112,7 +134,7 @@ class Speaker:
             print("(No offline voice installed. Run: pip install pyttsx3)")
             return
         engine = pyttsx3.init()
-        voice = pick_british_female(engine.getProperty("voices"))
+        voice = pick_british_female(engine.getProperty("voices"), self.language)
         if voice is not None:
             engine.setProperty("voice", voice.id)
         engine.say(text)
@@ -133,11 +155,14 @@ def trim_silence(samples, lead: float = 0.02, tail: float = 0.15, level: int = 3
     return samples[start:end]
 
 
-def pick_british_female(voices):
-    """Choose the best match for a British female voice from pyttsx3's list.
+def pick_british_female(voices, language: str = "en"):
+    """Choose the best offline voice from pyttsx3's list: British female for
+    English, German female for German.
 
-    British and female beats British only, which beats female only; None if neither.
+    Right language and female beats language only, which beats female only;
+    None if neither.
     """
+    hints = LANGUAGE_HINTS.get(language[:2], BRITISH_HINTS)
 
     def score(v) -> tuple[bool, bool]:
         langs = " ".join(
@@ -145,7 +170,7 @@ def pick_british_female(voices):
             for l in (getattr(v, "languages", None) or [])
         )
         d = f"{v.id} {v.name} {langs} {getattr(v, 'gender', '')}".lower()
-        return any(k in d for k in BRITISH_HINTS), any(k in d for k in FEMALE_HINTS)
+        return any(k in d for k in hints), any(k in d for k in FEMALE_HINTS)
 
     best = max(voices, key=score, default=None)  # the first of the best
     return best if best is not None and any(score(best)) else None

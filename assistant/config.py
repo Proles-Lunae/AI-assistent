@@ -14,7 +14,9 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.toml"
 
 @dataclass
 class UserSettings:
-    name: str = "sir"  # What she calls you: "Good morning, sir."
+    name: str = "sir"  # What she calls you: "Guten Abend, Sir."
+    # The language she speaks and understands: "de" (German) or "en" (English).
+    language: str = "de"
 
     def address(self) -> str:
         return self.name.strip() or "sir"
@@ -28,7 +30,10 @@ class WeatherSettings:
 
 @dataclass
 class VoiceSettings:
-    voice: str = "en-GB-SoniaNeural"  # or en-GB-LibbyNeural, en-GB-MaisieNeural
+    # "" = the usual voice for the language (German: de-DE-KatjaNeural,
+    # English: en-GB-SoniaNeural). Other German voices: de-DE-AmalaNeural,
+    # de-DE-SeraphinaMultilingualNeural.
+    voice: str = ""
     rate: str = "+0%"  # Speaking speed, e.g. "-10%" or "+15%"
 
 
@@ -57,15 +62,17 @@ class ClapSettings:
 class ListenSettings:
     # After greeting you, listen for a question and answer it with Claude.
     enabled: bool = True
-    # Whisper model: "tiny" (fastest), "base", "small" (more accurate, slower).
-    model: str = "base"
-    language: str = "en"  # the language you speak; "" = let Whisper work it out
+    # Whisper model: "tiny", "base", "small", "medium" - bigger is more
+    # accurate but slower, and a bigger one-off download (small: about 460 MB).
+    model: str = "small"
+    # The language you speak: "" = the same as [user] language; "auto" = detect.
+    language: str = ""
     # The conversation goes on until you tell her to stop ("stop", "goodbye",
     # "thanks"...). Set this to a number of seconds to also end it when you've
     # been quiet that long; 0 = never.
     end_after_quiet: float = 0.0
     wait_seconds: float = 6.0  # how often she checks whether to stop waiting
-    silence_seconds: float = 1.0  # this much quiet means you've finished
+    silence_seconds: float = 1.2  # this much quiet means you've finished
     max_seconds: float = 15.0  # longest question
     # Speech must be this many times louder than the room's background noise,
     # and at least this loud (0-1). Lower min_level if she doesn't hear you.

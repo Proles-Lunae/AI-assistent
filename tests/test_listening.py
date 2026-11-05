@@ -30,8 +30,8 @@ def test_records_until_you_stop_talking():
     q = audio_queue((0.5, ROOM), (1.5, VOICE), (2.0, ROOM), (3.0, ROOM))
     audio = record_question(q, RATE, ListenSettings())
     seconds = len(audio) / RATE
-    # a moment before, the 1.5 s of speech, then the 1 s of quiet that ends it
-    assert 2.4 < seconds < 2.8
+    # 0.3 s from before, the 1.5 s of speech, then the 1.2 s of quiet that ends it
+    assert 2.85 < seconds < 3.15
     assert not q.empty()  # the rest wasn't needed
 
 
@@ -74,14 +74,21 @@ def test_transcriber_uses_the_language_and_16_khz(monkeypatch):
             calls.append((len(audio), options))
             return [SimpleNamespace(text=" What time is it? "), SimpleNamespace(text="Thanks.")], None
 
-    t = Transcriber(ListenSettings(language="en"))
+    t = Transcriber(ListenSettings(language="en"), prompt="Hello.")
     t._model = FakeModel()
     assert t.transcribe(np.zeros(RATE, np.float32), RATE) == "What time is it? Thanks."
     length, options = calls[0]
     assert length == 16000 and options["language"] == "en"
-    t.s.language = ""
+    assert options["beam_size"] == 5 and options["initial_prompt"] == "Hello."
+    t.s.language = "auto"
     t.transcribe(np.zeros(RATE, np.float32), RATE)
-    assert calls[1][1]["language"] is None  # "" = let Whisper detect it
+    assert calls[1][1]["language"] is None  # "auto" = let Whisper detect it
+
+
+def test_speech_language_follows_her_language_unless_set():
+    assert Transcriber(ListenSettings(), language="de").language() == "de"
+    assert Transcriber(ListenSettings(language="en"), language="de").language() == "en"
+    assert Transcriber(ListenSettings(language="AUTO"), language="de").language() is None
 
 
 @pytest.mark.parametrize("text", ["Thanks!", "Thank you.", "No, that's all.", "Goodbye", "bye bye",
@@ -109,6 +116,7 @@ def make_talker(monkeypatch, said, answers=None, brain_fails=False, **listen):
     from assistant.brain import BrainError
 
     config = Config()
+    config.user.language = "en"  # these tests check the English texts
     for key, value in listen.items():
         setattr(config.listen, key, value)
     a = main.Assistant(config)
@@ -133,7 +141,7 @@ def make_talker(monkeypatch, said, answers=None, brain_fails=False, **listen):
     a.transcriber.transcribe = lambda audio, rate: heard[-1]
     monkeypatch.setattr(a, "context", lambda: "It is Friday.")
 
-    def fake_answer(question, history, context, address):
+    def fake_answer(question, history, context, address, instruction="Answer in English."):
         asked.append((question, list(history), context, address))
         if brain_fails:
             raise BrainError("not logged in")
@@ -158,7 +166,9 @@ def test_follow_up_questions_remember_the_conversation(monkeypatch):
 
 
 def test_thanks_ends_the_conversation_politely(monkeypatch):
-    from assistant.main import GOODBYE
+    from assistant.phrases import LANGUAGES
+
+    GOODBYE = LANGUAGES["en"].goodbye
 
     a, spoken, asked = make_talker(monkeypatch, ["Thank you."])
     a.converse(queue.Queue())
@@ -166,7 +176,9 @@ def test_thanks_ends_the_conversation_politely(monkeypatch):
 
 
 def test_mumbling_gets_a_polite_retry(monkeypatch):
-    from assistant.main import DIDNT_CATCH
+    from assistant.phrases import LANGUAGES
+
+    DIDNT_CATCH = LANGUAGES["en"].didnt_catch
 
     a, spoken, _ = make_talker(monkeypatch, ["", "Hello?", None])
     a.converse(queue.Queue())
@@ -175,7 +187,9 @@ def test_mumbling_gets_a_polite_retry(monkeypatch):
 
 
 def test_claude_unavailable_is_explained(monkeypatch):
-    from assistant.main import NO_BRAIN
+    from assistant.phrases import LANGUAGES
+
+    NO_BRAIN = LANGUAGES["en"].no_brain
 
     a, spoken, _ = make_talker(monkeypatch, ["What's the time?"], brain_fails=True)
     a.converse(queue.Queue())
@@ -183,7 +197,9 @@ def test_claude_unavailable_is_explained(monkeypatch):
 
 
 def test_silence_does_not_end_the_conversation(monkeypatch):
-    from assistant.main import GOODBYE
+    from assistant.phrases import LANGUAGES
+
+    GOODBYE = LANGUAGES["en"].goodbye
 
     # a whole minute of quiet, then a question, then "stop"
     a, spoken, asked = make_talker(monkeypatch, [None] * 10 + ["What's the time?", "Stop."])

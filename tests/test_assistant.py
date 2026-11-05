@@ -657,7 +657,9 @@ def make_assistant(monkeypatch, weather_seconds=0.0, fail=False):
         return report
 
     monkeypatch.setattr(main, "get_weather", fake_weather)
-    a = main.Assistant(Config())
+    config = Config()
+    config.user.language = "en"  # these tests check the English texts
+    a = main.Assistant(config)
     a.transcriber.load = lambda: None  # no speech model in tests
     a.speaker.prepare = lambda text: SimpleNamespace(text=text, samples=None)
     played = []
@@ -697,7 +699,9 @@ def test_temperature_is_checked_fresh_at_every_clap(monkeypatch):
 
 
 def test_weather_failure_still_gives_one_greeting_and_an_apology(monkeypatch):
-    from assistant.main import NO_WEATHER
+    from assistant.phrases import LANGUAGES
+
+    NO_WEATHER = LANGUAGES["en"].no_weather
 
     a, played, _ = make_assistant(monkeypatch, fail=True)
     a.wake_up()

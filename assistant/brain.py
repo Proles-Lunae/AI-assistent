@@ -17,10 +17,10 @@ import subprocess
 from .config import BrainSettings
 
 PERSONA = (
-    "You are a warm, witty British voice assistant, a bit like a friendly butler. "
+    "You are a warm, witty voice assistant, a bit like a friendly British butler. "
     "Everything you write is read aloud by a text-to-speech voice, so: write plain "
-    "spoken sentences only, with no markdown, lists, emoji or symbols such as ° or %. "
-    "Say 'degrees' and 'percent' as words. "
+    "spoken sentences only, with no markdown, lists, emoji or symbols such as ° or %; "
+    "write units like degrees and percent as words. "
     "Keep replies short and natural."
 )
 
@@ -71,7 +71,7 @@ class ClaudeBrain:
         return reply
 
     def answer(self, question: str, history: list[tuple[str, str]], context: str,
-               address: str = "sir") -> str:
+               address: str = "sir", instruction: str = "Answer in English.") -> str:
         """Answer a spoken question, remembering the conversation so far."""
         lines = [f"Context: {context}"]
         if history:
@@ -82,6 +82,6 @@ class ClaudeBrain:
             "The user just said this (turned into text from speech, so it may have "
             f'small mistakes): "{question}"',
             f"Answer in at most three short spoken sentences. You may call the user "
-            f"'{address}' now and then.",
+            f"'{address}' now and then. {instruction}",
         ]
         return self.ask("\n".join(lines))

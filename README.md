@@ -1,11 +1,13 @@
 # Clap-activated voice assistant
 
-Clap twice and the assistant wakes up. It greets you in a British female voice
-and tells you the temperature outside, with a useful tip:
-"Good evening, sir. It's 8 degrees outside. A jacket should do."
+Clap twice and the assistant wakes up. She greets you, tells you the temperature
+outside with a useful tip, and then answers your questions. She speaks **German**
+by default (or English):
+"Guten Abend, Sir. Es sind 8 Grad draußen. Eine Jacke sollte reichen."
 
 - **Wake word:** two claps, picked up by your microphone.
-- **Voice:** Microsoft's free "Sonia" neural voice (British English, female), via `edge-tts`.
+- **Voice:** Microsoft's free neural voices via `edge-tts`: "Katja" (German, female),
+  or "Sonia" (British English, female) when she speaks English.
 - **Weather:** [Open-Meteo](https://open-meteo.com/), which is free and needs no API key.
 - **Hearing you:** after the greeting she listens, and turns what you say into text
   with [Whisper](https://github.com/SYSTRAN/faster-whisper), on your own PC.
@@ -18,7 +20,7 @@ and tells you the temperature outside, with a useful tip:
 You need **Python 3.11 or newer**, a microphone, speakers, and
 [Claude Code](https://code.claude.com/docs) installed and logged in (for answering
 your questions). The first time she listens, the speech recognition downloads its
-model (about 140 MB).
+model (about 460 MB).
 
 1. Get the code:
 
@@ -72,6 +74,14 @@ model (about 140 MB).
 
 Press **Ctrl+C** to stop.
 
+## Language
+
+Set `language` under `[user]` in `config.toml`: `"de"` for German (the default) or
+`"en"` for English. That switches everything at once: the greeting, the
+temperature and tips, the voice, the speech recognition and Claude's answers. In
+German she addresses you politely with "Sie". All her sentences are in
+`assistant/phrases.py`, one section per language, so the wording is easy to change.
+
 ## Talking to her
 
 After the greeting you hear a short **beep**: she's listening. Ask your question
@@ -85,7 +95,8 @@ Settings are under `[listen]` in `config.toml`:
 
 - If she doesn't notice you talking, lower `min_level` (e.g. to `0.003`).
 - If she cuts you off mid-sentence, raise `silence_seconds` (e.g. to `1.5`).
-- For better recognition, set `model = "small"` (slower); for speed, `"tiny"`.
+- For even better recognition, set `model = "medium"` (slower, 1.5 GB download);
+  for speed, `"base"` or `"tiny"`.
 - To have her also stop when you've been quiet a while, set `end_after_quiet`
   to a number of seconds (e.g. `30`).
 - To turn listening off, set `enabled = false`.
@@ -123,6 +134,7 @@ you ──► microphone.py ──► listening.py (Whisper: speech to text) ─
 | `assistant/clap_detector.py` | Spots short, sharp sounds and checks the gap between two of them |
 | `assistant/timeframes.py` | The three time frames and their standard greetings, in one table |
 | `assistant/weather.py` | Finds your location (or city), gets the current temperature and the chance of rain |
+| `assistant/phrases.py` | Everything she says, in German and English |
 | `assistant/listening.py` | Records your question until you stop talking, and turns it into text (Whisper) |
 | `assistant/brain.py` | Asks Claude to answer your question, remembering the conversation |
 | `assistant/voice.py` | Turns text into speech and plays it |
@@ -139,7 +151,7 @@ standard greeting:
 | 6pm – 3am | Good evening |
 
 **What she says:** the greeting, the temperature (checked fresh at every clap),
-and a tip for the weather:
+and a tip for the weather (shown here in English; the German ones mean the same):
 
 | Weather | Tip |
 | --- | --- |
@@ -151,8 +163,8 @@ and a tip for the weather:
 | up to 28° | "It's warm, so dress lightly." |
 | above 28° | "It's hot, so drink plenty of water and stay in the shade." |
 
-To change the wording or the temperatures, edit `TIPS` and `RAIN_EXTRAS` at the top
-of `assistant/weather.py`.
+To change the wording or the temperatures, edit `tips` and `rain_extras` in
+`assistant/phrases.py` (there's one set per language).
 
 **Why there's no wait:** the three greetings are recorded when the program starts.
 When you clap, the greeting plays straight away, and while she says it (about a
