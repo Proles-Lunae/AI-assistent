@@ -113,7 +113,12 @@ recording**, in the background (`assistant/briefing.py`). When you clap, it play
 straight away, with no pause between the greeting and the forecast. Every clap in
 the same frame replays it. The next frame's recording is made 30 minutes before
 that frame starts, so there's no wait when it changes. That's three Claude
-requests a day. Set `prepare_ahead = false` under `[briefing]` to ask Claude on
+requests a day.
+
+If you clap before Claude's version is ready (right after starting, or after
+the PC wakes from sleep), she still says greeting and weather in one message,
+using a built-in forecast sentence that takes only a second or two to make.
+Claude's version is used from the next clap on. Set `prepare_ahead = false` under `[briefing]` to ask Claude on
 every clap instead.
 
 If Claude can't be reached, the assistant still gives you a simple built-in

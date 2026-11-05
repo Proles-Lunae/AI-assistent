@@ -123,3 +123,25 @@ def test_stop_ends_worker():
     cache.stop()
     cache._thread.join(timeout=2)
     assert not cache._thread.is_alive()
+
+
+def test_old_briefing_keeps_playing_while_it_is_remade():
+    clock = Fake(0.0)
+    now = Fake(datetime(2026, 1, 2, 8))
+    cache, _ = make_cache(now, clock=clock)
+    stand_in = Briefing(Speech("no weather"), "", MORNING, made_at=0, complete=False)
+    cache._ready[MORNING] = stand_in
+    clock.value = 500  # long past the 2 minutes: due for remaking...
+    assert cache.next_to_build() == MORNING
+    assert cache.take(timeout=0) is stand_in  # ...but a clap still gets it at once
+
+
+def test_quick_version_is_kept_but_never_replaces_claudes():
+    cache, _ = make_cache(Fake(datetime(2026, 1, 2, 8)))
+    claudes = Briefing(Speech("Claude"), "", MORNING, 0, True)
+    quick = Briefing(Speech("quick"), "", MORNING, 0, False)
+    cache.offer(quick)
+    assert cache.take(timeout=0) is quick
+    cache._ready[MORNING] = claudes  # what the worker does when Claude is done
+    cache.offer(Briefing(Speech("quick again"), "", MORNING, 0, False))
+    assert cache.take(timeout=0) is claudes

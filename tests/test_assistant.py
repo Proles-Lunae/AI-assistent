@@ -352,3 +352,64 @@ def test_startup_says_which_settings_file_is_used(tmp_path, capsys):
     path.write_text('[user]\nname = "sir"\n')
     load_config(path, report=True)
     assert f"Settings loaded from {path}" in capsys.readouterr().out
+
+
+def test_location_is_remembered(monkeypatch):
+    from assistant import weather
+
+    lookups = []
+    monkeypatch.setattr(weather, "_lookup_location", lambda: lookups.append(1) or (1.0, 2.0, "Here"))
+    weather.detect_location()
+    weather.detect_location()
+    assert len(lookups) == 1
+
+
+def make_assistant(monkeypatch, claude_seconds=0.0):
+    """An Assistant with fake weather, Claude and voice; records what it plays."""
+    import time as _time
+
+    from assistant import main
+    from assistant.config import Config
+
+    report = WeatherReport("Berlin", "light rain", 8, 6, 10, 5, 70, 18, "°C", "km/h")
+    monkeypatch.setattr(main, "get_weather", lambda *a: report)
+    a = main.Assistant(Config())
+
+    def slow_claude(weather, start):
+        _time.sleep(claude_seconds)
+        return "Claude's forecast."
+
+    a.brain.weather_briefing = slow_claude
+    a.speaker.prepare = lambda text: SimpleNamespace(text=text)
+    played = []
+    a.speaker.play = lambda speech: played.append(speech.text)
+    return a, played
+
+
+def test_clap_before_claude_is_ready_still_gives_one_message(monkeypatch):
+    from assistant.briefing import BriefingCache
+
+    a, played = make_assistant(monkeypatch, claude_seconds=1.0)
+    a.cache = BriefingCache(a.build_briefing)
+    a.cache.start()
+    try:
+        a.wake_up()  # straight after starting: Claude still busy
+        assert len(played) == 1
+        assert played[0].startswith("Good ") and ", sir." in played[0]
+        assert "light rain" in played[0]  # the quick forecast, in the same message
+    finally:
+        a.cache.stop()
+
+
+def test_clap_after_claude_is_ready_plays_claudes_version(monkeypatch):
+    from assistant.briefing import BriefingCache
+
+    a, played = make_assistant(monkeypatch)
+    a.cache = BriefingCache(a.build_briefing)
+    a.cache.start()
+    try:
+        a.cache.take(timeout=2)
+        a.wake_up()
+        assert played == [played[0]] and played[0].endswith("sir. Claude's forecast.")
+    finally:
+        a.cache.stop()

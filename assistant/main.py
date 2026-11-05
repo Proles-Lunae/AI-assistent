@@ -8,7 +8,6 @@ from datetime import datetime
 from pathlib import Path
 
 from .brain import (
-    GREETINGS,
     NO_WEATHER,
     BrainError,
     ClaudeBrain,
@@ -20,7 +19,7 @@ from .brain import (
 from .briefing import Briefing, BriefingCache
 from .clap_detector import DoubleClapDetector, list_devices, show_levels
 from .config import Config, ConfigError, load_config
-from .voice import Speaker, Speech
+from .voice import Speaker
 from .weather import get_weather
 
 
@@ -30,38 +29,50 @@ class Assistant:
         self.brain = ClaudeBrain(config.brain)
         self.speaker = Speaker(config.voice)
         self.cache: BriefingCache | None = None
-        self.greetings: dict[str, Speech] = {}
 
     def greeting_text(self, period: str) -> str:
         return standard_greeting(period, self.config.user.address())
 
-    def weather_text(self, start: datetime) -> tuple[str, bool]:
-        """Return (forecast for the frame at ``start``, whether weather was included)."""
-        period = time_of_day(start)
+    def fetch_weather(self, start: datetime):
         try:
-            weather = get_weather(
+            return get_weather(
                 self.config.weather.city, self.config.weather.units, start, frame_end(start)
             )
         except Exception as exc:
             print(f"(Couldn't get the weather: {exc})")
+            return None
+
+    def weather_text(self, start: datetime) -> tuple[str, bool]:
+        """Return (forecast for the frame at ``start``, whether weather was included)."""
+        weather = self.fetch_weather(start)
+        if weather is None:
             return NO_WEATHER, False
         try:
             return self.brain.weather_briefing(weather, start), True
         except BrainError as exc:
             print(f"(Claude unavailable, using a simple forecast: {exc})")
-            return weather.summary(period), True
+            return weather.summary(time_of_day(start)), True
 
-    def build_briefing(self, start: datetime) -> Briefing:
-        """Make greeting + forecast for the time frame at ``start`` as one recording."""
-        weather, complete = self.weather_text(start)
+    def make_briefing(self, start: datetime, weather_text: str, complete: bool) -> Briefing:
+        """Greeting + forecast for the frame at ``start``, as one recording."""
         greeting = self.greeting_text(time_of_day(start))
         return Briefing(
-            speech=self.speaker.prepare(f"{greeting} {weather}"),
-            weather_text=weather,
+            speech=self.speaker.prepare(f"{greeting} {weather_text}"),
+            weather_text=weather_text,
             frame=start,
             made_at=time.monotonic(),
             complete=complete,
         )
+
+    def build_briefing(self, start: datetime) -> Briefing:
+        """The full version, with Claude's wording (takes several seconds)."""
+        return self.make_briefing(start, *self.weather_text(start))
+
+    def quick_briefing(self, start: datetime) -> Briefing:
+        """A fast version without Claude: the weather in a built-in sentence (~1-2 s)."""
+        weather = self.fetch_weather(start)
+        text = NO_WEATHER if weather is None else weather.summary(time_of_day(start))
+        return self.make_briefing(start, text, complete=False)  # Claude's replaces it
 
     def greet_once(self) -> None:
         """Greet and give the forecast right away (no preparing ahead)."""
@@ -72,27 +83,24 @@ class Assistant:
 
     def wake_up(self) -> None:
         print("\nDouble clap heard!")
-        briefing = self.cache.take() if self.cache else None
-        if briefing is not None:
-            self.speaker.play(briefing.speech)  # greeting and forecast in one go
+        frame = frame_start(datetime.now())
+        if self.cache is None:  # prepare_ahead is off: ask Claude now
+            briefing = self.build_briefing(frame)
         else:
-            # Not ready yet (just started): greet now, forecast as soon as it's ready.
-            period = time_of_day(datetime.now())
-            if period in self.greetings:
-                self.speaker.play(self.greetings[period])
-            else:
-                self.speaker.say(self.greeting_text(period))
-            if self.cache:
-                briefing = self.cache.take(timeout=self.config.brain.timeout + 30)
+            briefing = self.cache.take()
             if briefing is None:
-                briefing = self.build_briefing(frame_start(datetime.now()))
-            self.speaker.say(briefing.weather_text)
+                # Claude's version isn't ready yet (just started, or the PC was
+                # asleep): use the quick version so you aren't kept waiting.
+                print("(Using the quick forecast; Claude's is still being prepared.)")
+                quick = self.quick_briefing(frame)
+                self.cache.offer(quick)  # reused by the next clap until Claude's is ready
+                briefing = self.cache.take() or quick  # Claude's may be done by now
+        self.speaker.play(briefing.speech)  # greeting and forecast in one message
         print("\nListening for a double clap again...")
 
     def run(self) -> None:
         if self.config.briefing.prepare_ahead:
-            print("Preparing the greetings and weather in the background...")
-            self.greetings = {p: self.speaker.prepare(self.greeting_text(p)) for p in GREETINGS}
+            print("Preparing the greeting and weather in the background...")
             self.cache = BriefingCache(self.build_briefing)
             self.cache.start()
         detector = DoubleClapDetector(self.config.clap)

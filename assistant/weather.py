@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import ssl
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -118,11 +119,25 @@ def find_city(city: str) -> tuple[float, float, str]:
     return place["latitude"], place["longitude"], place["name"]
 
 
+_location_cache: dict = {}
+LOCATION_MAX_AGE = 3 * 60 * 60  # look your location up again after 3 hours
+
+
 def detect_location() -> tuple[float, float, str]:
     """Estimate (latitude, longitude, city) from your internet connection.
 
     Accurate to roughly your city. With a VPN on, it finds the VPN's location.
+    The answer is remembered for a few hours, which saves time on each forecast.
     """
+    cached = _location_cache.get("value")
+    if cached and time.monotonic() - _location_cache["at"] < LOCATION_MAX_AGE:
+        return cached
+    location = _lookup_location()
+    _location_cache.update(value=location, at=time.monotonic())
+    return location
+
+
+def _lookup_location() -> tuple[float, float, str]:
     problems = []
     for url in LOCATION_URLS:
         try:

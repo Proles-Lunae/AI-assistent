@@ -25,14 +25,15 @@ class Briefing:
     weather_text: str  # the forecast on its own
     frame: datetime  # start of the time frame it's for
     made_at: float  # time.monotonic() when it was made
-    complete: bool  # False if the weather couldn't be fetched
+    complete: bool  # False if it's a stand-in (quick version, or no weather): remade soon
 
 
 class BriefingCache:
     """Holds the briefings for the current and the next time frame.
 
     ``build(frame_start)`` makes one briefing. One made without weather
-    (service unreachable) is remade after ``incomplete_max_age`` seconds.
+    (service unreachable) is remade after ``incomplete_max_age`` seconds, but
+    keeps being played until the new one is ready, so a clap never waits.
     """
 
     def __init__(
@@ -86,13 +87,18 @@ class BriefingCache:
             self._stopped = True
             self._cond.notify_all()
 
+    def offer(self, briefing: Briefing) -> None:
+        """Keep a stand-in briefing for its frame, unless a better one is there."""
+        with self._cond:
+            self._ready.setdefault(briefing.frame, briefing)
+
     def take(self, timeout: float = 0.0) -> Briefing | None:
         """The current frame's briefing, waiting up to ``timeout`` seconds for it."""
         deadline = time.monotonic() + timeout
         with self._cond:
             while True:
                 briefing = self._ready.get(frame_start(self.now()))
-                if briefing is not None and self.usable(briefing):
+                if briefing is not None:
                     return briefing
                 self._cond.notify_all()  # make sure the worker is on it
                 remaining = deadline - time.monotonic()
