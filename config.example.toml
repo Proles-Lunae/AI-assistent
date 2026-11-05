@@ -32,8 +32,9 @@ model = "small"           # speech recognition: "tiny", "base", "small", "medium
 language = ""             # "" = same as [user] language; "auto" = detect it
 end_after_quiet = 0       # 0 = keep talking until you say "stop" or "goodbye";
                           # or a number of seconds of quiet after which she stops
-silence_seconds = 1.2     # this much quiet means you've finished
-max_seconds = 15.0        # longest question
+silence_seconds = 1.2     # this much quiet means you've finished...
+extra_wait_seconds = 2.0  # ...unless it sounds unfinished ("und", "ähm"): then she waits longer
+max_seconds = 30.0        # longest question
 speech_ratio = 3.0        # how much louder than the room your voice must be...
 min_level = 0.006         # ...and how loud at least; lower it if she doesn't hear you
 

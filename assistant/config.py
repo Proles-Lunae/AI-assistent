@@ -72,8 +72,11 @@ class ListenSettings:
     # been quiet that long; 0 = never.
     end_after_quiet: float = 0.0
     wait_seconds: float = 6.0  # how often she checks whether to stop waiting
-    silence_seconds: float = 1.2  # this much quiet means you've finished
-    max_seconds: float = 15.0  # longest question
+    silence_seconds: float = 1.2
+    # When what you've said so far sounds unfinished ("...und", "ähm", no full
+    # stop), she waits this much longer for you to carry on.
+    extra_wait_seconds: float = 2.0  # this much quiet means you've finished
+    max_seconds: float = 30.0  # longest question
     # Speech must be this many times louder than the room's background noise,
     # and at least this loud (0-1). Lower min_level if she doesn't hear you.
     speech_ratio: float = 3.0

@@ -11,7 +11,8 @@ from pathlib import Path
 
 from .brain import BrainError, ClaudeBrain
 from .config import Config, ConfigError, load_config
-from .listening import MicrophoneStopped, Transcriber, drain, record_question
+from .listening import (MicrophoneStopped, Transcriber, drain, record_question,
+                        sounds_unfinished)
 from .microphone import choose_microphone, list_devices, listen, recording, show_levels
 from .phrases import all_goodbye_words, phrases_for
 from .timeframes import GREETINGS, frame_end, frame_start, time_of_day
@@ -19,6 +20,7 @@ from .voice import Speaker, Speech
 from .weather import detect_location, find_city, get_weather
 
 WEATHER_WAIT = 15.0  # seconds; after this, give up on the weather for this clap
+MAX_CONTINUATIONS = 3  # how many times she waits for the rest of an unfinished question
 
 
 class Assistant:
@@ -87,7 +89,10 @@ class Assistant:
                     return
                 continue
             try:
-                question = self.transcriber.transcribe(audio, rate)
+                question = self.hear_out(blocks, audio)
+            except MicrophoneStopped as exc:
+                print(f"(Stopped listening: {exc})")
+                return
             except Exception as exc:  # e.g. faster-whisper not installed
                 print(f"(Couldn't turn your speech into text: {exc})")
                 return
@@ -110,6 +115,25 @@ class Assistant:
                 continue  # she can still be asked again, or told to stop
             history.append((question, answer))
             self.speaker.say(answer)
+
+    def hear_out(self, blocks, audio) -> str:
+        """Turn your question into text, waiting a little longer while it sounds
+        unfinished, so she doesn't answer while you're still speaking."""
+        import numpy as np
+
+        rate, settings = self.config.clap.sample_rate, self.config.listen
+        question = self.transcriber.transcribe(audio, rate)
+        for _ in range(MAX_CONTINUATIONS):
+            if not sounds_unfinished(question, self.words.unfinished_words):
+                break
+            print(f"(Heard so far: {question!r}; waiting in case you go on...)")
+            more = record_question(blocks, rate, settings, wait_seconds=settings.extra_wait_seconds,
+                                   noise=settings.min_level / settings.speech_ratio)
+            if more is None:
+                break  # you were finished after all
+            audio = np.concatenate([audio, more])
+            question = self.transcriber.transcribe(audio, rate)
+        return question
 
     def context(self) -> str:
         """What Claude should know: the date and time, and where you are."""

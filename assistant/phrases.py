@@ -43,6 +43,10 @@ class Phrases:
     claude_instruction = "Answer in English."
     # An example of how you talk to her, which helps the speech recognition.
     whisper_prompt = "Hello. What time is it? What's the weather like today?"
+    # A pause after one of these words means you're probably not finished yet.
+    unfinished_words = ("and", "or", "but", "because", "so", "that", "if", "when", "um", "uh",
+                        "er", "erm", "the", "a", "an", "to", "of", "with", "for", "in", "on",
+                        "like", "is", "my", "your", "about", "than")
 
     def greeting(self, period: str, address: str) -> str:
         return self.greetings[period] + (f", {address}" if address else "") + "."
@@ -85,6 +89,10 @@ class German(Phrases):
     claude_instruction = ("Answer in German, addressing the user politely with 'Sie'. "
                           "Write 'Grad' and 'Prozent' as words.")
     whisper_prompt = "Hallo. Wie spät ist es? Wie wird das Wetter heute?"
+    unfinished_words = ("und", "oder", "aber", "weil", "dass", "denn", "wenn", "ob", "also",
+                        "äh", "ähm", "öh", "hm", "mit", "von", "zu", "für", "der", "die", "das",
+                        "den", "dem", "des", "ein", "eine", "einen", "einem", "in", "im", "auf",
+                        "an", "am", "wie", "als", "mein", "meine", "über", "nach", "bei")
 
     def greeting(self, period: str, address: str) -> str:
         # German capitalises the form of address: "Guten Abend, Sir."

@@ -278,3 +278,100 @@ def test_start_up_message_names_the_model_and_its_size(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "model 'small'" in out and "480 MB" in out
     assert t._model.name == "small"
+
+
+SOFT = 0.004  # quieter speech: below the level needed to start, above half of it
+
+
+def test_quieter_speech_mid_sentence_does_not_end_the_question():
+    # loud start, 1.5 s of softer speech (which alone wouldn't start a question), loud again
+    q = audio_queue((0.5, ROOM), (1.0, VOICE), (1.5, SOFT), (1.0, VOICE), (2.0, ROOM))
+    audio = record_question(q, RATE, ListenSettings())
+    assert len(audio) / RATE > 3.5  # one question: all of it, plus the quiet that ends it
+
+
+def test_soft_noise_alone_does_not_start_a_question():
+    q = audio_queue((0.5, ROOM), (7.0, SOFT * 0.8))
+    assert record_question(q, RATE, ListenSettings()) is None
+
+
+def test_waiting_time_and_room_noise_can_be_given():
+    q = audio_queue((2.5, ROOM), (1.0, VOICE), (2.0, ROOM))
+    assert record_question(q, RATE, ListenSettings(), wait_seconds=2.0) is None  # too late
+    q = audio_queue((1.0, ROOM), (1.0, VOICE), (2.0, ROOM))
+    assert record_question(q, RATE, ListenSettings(), wait_seconds=2.0, noise=ROOM) is not None
+
+
+DE_WORDS = __import__("assistant.phrases", fromlist=["LANGUAGES"]).LANGUAGES["de"].unfinished_words
+EN_WORDS = __import__("assistant.phrases", fromlist=["LANGUAGES"]).LANGUAGES["en"].unfinished_words
+
+
+@pytest.mark.parametrize("text", ["Wie spät ist es?", "Erzähl mir einen Witz.", "Danke!",
+                                  "Wie wird das Wetter morgen in Hamburg?"])
+def test_finished_german_sentences(text):
+    from assistant.listening import sounds_unfinished
+
+    assert not sounds_unfinished(text, DE_WORDS)
+
+
+@pytest.mark.parametrize("text", ["Kannst du mir sagen, wie", "Ich wollte fragen, ob",
+                                  "Was ist der Unterschied zwischen einem Hund und",
+                                  "Ähm, ich hätte gern...", "Erklär mir das mit dem,",
+                                  "Wie lange dauert es bis Ähm."])
+def test_unfinished_german_sentences(text):
+    from assistant.listening import sounds_unfinished
+
+    assert sounds_unfinished(text, DE_WORDS)
+
+
+def test_unfinished_english_sentences():
+    from assistant.listening import sounds_unfinished
+
+    assert sounds_unfinished("What's the difference between a cat and", EN_WORDS)
+    assert sounds_unfinished("Tell me about, um.", EN_WORDS)
+    assert not sounds_unfinished("What's the time?", EN_WORDS)
+    assert not sounds_unfinished("", EN_WORDS)
+
+
+def make_hearer(monkeypatch, pieces, transcripts):
+    """An Assistant where each recorded piece adds a word; returns it and a call log."""
+    from assistant import main
+
+    a = main.Assistant(Config())
+    calls = []
+    more = iter(pieces)
+
+    def fake_record(blocks, rate, settings, wait_seconds=None, noise=None):
+        calls.append(wait_seconds)
+        return next(more, None)
+
+    monkeypatch.setattr(main, "record_question", fake_record)
+    a.transcriber.transcribe = lambda audio, rate: transcripts[len(audio) - 1]
+    return a, calls
+
+
+def test_she_waits_for_the_rest_of_an_unfinished_question(monkeypatch):
+    a, calls = make_hearer(monkeypatch, [np.zeros(1), np.zeros(1)],
+                           ["Wie ist das Wetter in", "Wie ist das Wetter in Berlin und",
+                            "Wie ist das Wetter in Berlin und in Hamburg?"])
+    question = a.hear_out(queue.Queue(), np.zeros(1))
+    assert question == "Wie ist das Wetter in Berlin und in Hamburg?"
+    assert calls == [2.0, 2.0]  # waited the extra 2 s twice
+
+
+def test_a_finished_question_is_answered_without_waiting(monkeypatch):
+    a, calls = make_hearer(monkeypatch, [np.zeros(1)], ["Wie spät ist es?"])
+    assert a.hear_out(queue.Queue(), np.zeros(1)) == "Wie spät ist es?"
+    assert calls == []  # no extra waiting
+
+
+def test_if_you_dont_go_on_she_answers_what_she_has(monkeypatch):
+    a, calls = make_hearer(monkeypatch, [], ["Wie ist das Wetter"])
+    assert a.hear_out(queue.Queue(), np.zeros(1)) == "Wie ist das Wetter"
+    assert calls == [2.0]
+
+
+def test_she_does_not_wait_forever_for_an_unfinished_question(monkeypatch):
+    a, calls = make_hearer(monkeypatch, [np.zeros(1)] * 10, ["und"] * 11)
+    a.hear_out(queue.Queue(), np.zeros(1))
+    assert len(calls) == 3  # at most 3 extra waits

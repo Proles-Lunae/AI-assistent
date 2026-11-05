@@ -86,7 +86,9 @@ German she addresses you politely with "Sie". All her sentences are in
 
 After the greeting you hear a short **beep**: she's listening. Ask your question
 normally; she notices when you've stopped (about a second of quiet), and answers
-after a few seconds of thinking. Then she beeps again for a follow-up question,
+after a few seconds of thinking. Pauses are fine: if what you've said so far
+sounds unfinished (it ends with "und", "aber", "weil", "ähm", a comma...), she
+waits up to 2 more seconds for you to carry on. Then she beeps again for a follow-up question,
 and remembers what you talked about. Take as long as you like between questions:
 she keeps listening until you **tell her to stop**, by saying "stop", "goodbye",
 "thanks", "that's all" or "go to sleep". Then she goes back to waiting for claps.
@@ -94,7 +96,8 @@ she keeps listening until you **tell her to stop**, by saying "stop", "goodbye",
 Settings are under `[listen]` in `config.toml`:
 
 - If she doesn't notice you talking, lower `min_level` (e.g. to `0.003`).
-- If she cuts you off mid-sentence, raise `silence_seconds` (e.g. to `1.5`).
+- If she still cuts you off mid-sentence, raise `silence_seconds` (e.g. to `1.6`) or
+  `extra_wait_seconds` (e.g. to `3`).
 - For even better recognition, set `model = "medium"` (slower, 1.5 GB download);
   for speed, `"base"` or `"tiny"`.
 - To have her also stop when you've been quiet a while, set `end_after_quiet`

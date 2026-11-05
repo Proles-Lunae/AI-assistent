@@ -19,6 +19,7 @@ WHISPER_RATE = 16000  # Whisper expects 16 kHz audio
 # Download size of each Whisper model, for the start-up message.
 MODEL_SIZES = {"tiny": "75 MB", "base": "145 MB", "small": "480 MB", "medium": "1.5 GB",
                "large-v3": "3 GB"}
+KEEP_TALKING = 0.5  # once you're talking, this share of the start level still counts
 LEAD_IN = 0.3  # seconds kept from just before you started, so no syllable is lost
 
 
@@ -26,16 +27,23 @@ class MicrophoneStopped(RuntimeError):
     """The microphone stopped sending audio (unplugged, or taken by another app)."""
 
 
-def record_question(blocks: queue.Queue, sample_rate: int, settings: ListenSettings):
+def record_question(blocks: queue.Queue, sample_rate: int, settings: ListenSettings,
+                    wait_seconds: float | None = None, noise: float | None = None):
     """Record from ``blocks`` until you stop talking.
 
-    Waits up to ``wait_seconds`` for you to start, then stops after
-    ``silence_seconds`` of quiet (or ``max_seconds`` in total). Returns the
-    audio as one array, or None if you didn't say anything in that time.
+    Waits up to ``wait_seconds`` (default: the setting) for you to start, then
+    stops after ``silence_seconds`` of quiet (or ``max_seconds`` in total).
+    Returns the audio as one array, or None if you didn't say anything in that
+    time. ``noise`` is the room's loudness, if already known.
+
+    To start, your voice must be clearly louder than the room; once you're
+    talking, quieter speech (soft sounds, the ends of words) still counts, so
+    it doesn't end your question early.
     """
+    wait_seconds = settings.wait_seconds if wait_seconds is None else wait_seconds
     block_seconds = None
     heard: list[np.ndarray] = []
-    noise = None  # background loudness, learned from the first blocks
+    # noise: background loudness; if not given, learned from the first blocks
     talking = False
     quiet_for = 0.0
     waited = 0.0
@@ -48,13 +56,17 @@ def record_question(blocks: queue.Queue, sample_rate: int, settings: ListenSetti
         level = float(np.sqrt(np.mean(np.square(block)))) if len(block) else 0.0
         if noise is None:
             noise = level
-        loud = level > max(noise * settings.speech_ratio, settings.min_level)
+        start_level = max(noise * settings.speech_ratio, settings.min_level)
+        if talking:  # carrying on: half as loud is still talking
+            loud = level > max(start_level * KEEP_TALKING, noise * 1.5)
+        else:
+            loud = level > start_level
         if not talking:
             waited += block_seconds
             if loud:
                 talking = True
                 heard.append(block)
-            elif waited > settings.wait_seconds:
+            elif waited > wait_seconds:
                 return None
             else:
                 noise = 0.9 * noise + 0.1 * level  # keep learning the room's noise
@@ -65,6 +77,24 @@ def record_question(blocks: queue.Queue, sample_rate: int, settings: ListenSetti
         quiet_for = 0.0 if loud else quiet_for + block_seconds
         if quiet_for >= settings.silence_seconds or len(heard) * block_seconds >= settings.max_seconds:
             return np.concatenate(heard)
+
+
+def sounds_unfinished(text: str, unfinished_words) -> bool:
+    """Does this sound like you were still in the middle of a sentence?
+
+    True when it ends with a comma or dash, with a word that needs more after
+    it ("und", "aber", "weil", "ähm"...), or without a full stop, question
+    mark or exclamation mark (Whisper adds those to finished sentences).
+    """
+    text = text.strip()
+    if not text:
+        return False
+    if text.endswith(("...", "…", ",", ";", ":", "-", "–")):
+        return True
+    if text[-1] not in ".?!":
+        return True
+    last = text.rstrip(".?!").split()[-1].lower().strip(",;:\"'") if text.rstrip(".?!") else ""
+    return last in unfinished_words
 
 
 def to_whisper_rate(audio: np.ndarray, sample_rate: int) -> np.ndarray:
