@@ -28,7 +28,7 @@ cooldown = 3.0
 [listen]
 enabled = true            # after greeting you, listen for a question and answer it
 model = "small"           # speech recognition: "tiny", "base", "small", "medium" (bigger =
-                          # more accurate but slower; small downloads about 460 MB once)
+                          # more accurate but slower; small downloads about 480 MB once)
 language = ""             # "" = same as [user] language; "auto" = detect it
 end_after_quiet = 0       # 0 = keep talking until you say "stop" or "goodbye";
                           # or a number of seconds of quiet after which she stops

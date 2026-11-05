@@ -266,3 +266,15 @@ def test_model_download_warnings_are_hidden(monkeypatch):
     assert os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] == "1"
     assert os.environ["HF_HUB_VERBOSITY"] == "error"
     assert logging.getLogger("huggingface_hub").level == logging.ERROR
+
+
+def test_start_up_message_names_the_model_and_its_size(monkeypatch, capsys):
+    import sys
+
+    fake = SimpleNamespace(WhisperModel=lambda name, **kw: SimpleNamespace(name=name))
+    monkeypatch.setitem(sys.modules, "faster_whisper", fake)
+    t = Transcriber(ListenSettings(model="small"))
+    t.load()
+    out = capsys.readouterr().out
+    assert "model 'small'" in out and "480 MB" in out
+    assert t._model.name == "small"

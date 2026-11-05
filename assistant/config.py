@@ -63,7 +63,7 @@ class ListenSettings:
     # After greeting you, listen for a question and answer it with Claude.
     enabled: bool = True
     # Whisper model: "tiny", "base", "small", "medium" - bigger is more
-    # accurate but slower, and a bigger one-off download (small: about 460 MB).
+    # accurate but slower, and a bigger one-off download (small: about 480 MB).
     model: str = "small"
     # The language you speak: "" = the same as [user] language; "auto" = detect.
     language: str = ""

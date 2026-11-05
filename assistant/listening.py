@@ -3,7 +3,7 @@
 Recording stops by itself once you've been quiet for a moment. The speech is
 turned into text on your own PC with Whisper (the faster-whisper package), so
 your voice isn't sent anywhere. The first time, Whisper downloads its model
-(about 460 MB for "small").
+(about 480 MB for "small").
 """
 
 from __future__ import annotations
@@ -16,6 +16,9 @@ import numpy as np
 from .config import ListenSettings
 
 WHISPER_RATE = 16000  # Whisper expects 16 kHz audio
+# Download size of each Whisper model, for the start-up message.
+MODEL_SIZES = {"tiny": "75 MB", "base": "145 MB", "small": "480 MB", "medium": "1.5 GB",
+               "large-v3": "3 GB"}
 LEAD_IN = 0.3  # seconds kept from just before you started, so no syllable is lost
 
 
@@ -135,7 +138,9 @@ class Transcriber:
             quiet_model_download()
             from faster_whisper import WhisperModel
 
-            print("(Loading speech recognition; the first time it downloads about 140 MB...)")
+            size = MODEL_SIZES.get(self.s.model, "")
+            print(f"(Loading speech recognition, model '{self.s.model}'"
+                  + (f"; the first time it downloads about {size}" if size else "") + "...)")
             started = time.monotonic()
             self._model = WhisperModel(self.s.model, device="cpu", compute_type="int8")
             print(f"(Speech recognition ready after {time.monotonic() - started:.1f} s)")

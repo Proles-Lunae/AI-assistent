@@ -20,7 +20,7 @@ by default (or English):
 You need **Python 3.11 or newer**, a microphone, speakers, and
 [Claude Code](https://code.claude.com/docs) installed and logged in (for answering
 your questions). The first time she listens, the speech recognition downloads its
-model (about 460 MB).
+model (about 480 MB).
 
 1. Get the code:
 
