@@ -121,6 +121,20 @@ temperature and tips, the voice, the speech recognition and Claude's answers. In
 German she addresses you politely with "Sie". All her sentences are in
 `assistant/phrases.py`, one section per language, so the wording is easy to change.
 
+## Waking her
+
+- **Clap twice**, or
+- **Say her name: "Rose"** – she greets you and listens, like after a double clap.
+  Or ask straight away: **"Rose, wie spät ist es?"** – she skips the greeting and
+  answers.
+- Or click **Sprechen** in her window (or press the space bar).
+
+To hear her name, every short bit of speech near the microphone is checked with
+the speech recognition on your PC (nothing is sent anywhere). That costs some
+computing power while people talk nearby, or the TV is on; long stretches of
+talking are skipped. To wake her by claps only, set `wake_word = false` under
+`[listen]` in `config.toml`.
+
 ## Talking to her
 
 After the greeting you hear a short **beep**: she's listening. Ask your question

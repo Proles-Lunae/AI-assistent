@@ -31,6 +31,8 @@ cooldown = 3.0
 
 [listen]
 enabled = true            # after greeting you, listen for a question and answer it
+wake_word = true          # also wake her by saying her name ("Rose", or "Rose, wie spät ist es?");
+                          # false = claps only (saves computing power while people talk nearby)
 model = "small"           # speech recognition: "tiny", "base", "small", "medium" (bigger =
                           # more accurate but slower; small downloads about 480 MB once)
 language = ""             # "" = same as [user] language; "auto" = detect it

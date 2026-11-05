@@ -51,6 +51,7 @@ class Phrases:
     # The window: title, what the orb's caption says in each state, tray menu.
     app_title = "Assistant"
     status = {"starting": "Getting ready…", "waiting": "Clap twice to wake me",
+              "waiting_name": "Clap twice or say “{name}”",
               "listening": "Listening…", "thinking": "Thinking…", "speaking": "Speaking…",
               "problem": "Something's wrong – see below"}
     show_window = "Show"
@@ -104,6 +105,7 @@ class German(Phrases):
     whisper_prompt = "Hallo. Wie spät ist es? Wie wird das Wetter heute?"
     app_title = "Assistentin"
     status = {"starting": "Wird gestartet…", "waiting": "Zweimal klatschen, um mich zu wecken",
+              "waiting_name": "Zweimal klatschen oder „{name}“ sagen",
               "listening": "Ich höre zu…", "thinking": "Ich denke nach…",
               "speaking": "Ich spreche…", "problem": "Etwas stimmt nicht – siehe unten"}
     show_window = "Anzeigen"

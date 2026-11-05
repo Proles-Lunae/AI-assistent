@@ -23,18 +23,24 @@ SILENCE_HELP = """
 def listen(settings: ClapSettings, on_double_clap: Callable[[queue.Queue], None],
            on_clap: Callable[[], None] | None = None,
            talk_request: threading.Event | None = None,
-           on_talk: Callable[[queue.Queue], None] | None = None) -> None:
+           on_talk: Callable[[queue.Queue], None] | None = None,
+           wake=None, on_wake: Callable[[queue.Queue, str], None] | None = None) -> None:
     """Listen to the microphone forever, calling ``on_double_clap`` on each double clap.
 
     It's given the queue of microphone audio, so it can listen to you too.
     When ``talk_request`` is set (the window's Talk button), ``on_talk`` is
-    called the same way, as if you'd clapped.
+    called the same way, as if you'd clapped. ``wake`` (a WakeListener) is
+    given every block to listen for her name; when she's called,
+    ``on_wake(blocks, question)`` is called.
     """
     detector = DoubleClapDetector(settings)
     with recording(settings, choose_microphone(settings)) as blocks:
         started, loudest, warned = time.monotonic(), 0.0, False
         while True:
-            result = detector.process_block(blocks.get(), time.monotonic())
+            block = blocks.get()
+            result = detector.process_block(block, time.monotonic())
+            if wake is not None:
+                wake.feed(block)
             loudest = max(loudest, detector.last_peak)
             if not warned and time.monotonic() - started > 4:
                 warned = True
@@ -50,8 +56,12 @@ def listen(settings: ClapSettings, on_double_clap: Callable[[queue.Queue], None]
             elif talk_request is not None and talk_request.is_set():
                 talk_request.clear()
                 handler = on_talk or on_double_clap
+            elif wake is not None and on_wake is not None and (call := wake.take()) is not None:
+                handler = lambda q, call=call: on_wake(q, call)  # noqa: E731
             if handler is not None:
                 handler(blocks)
+                if wake is not None:
+                    wake.reset()  # forget anything heard meanwhile, e.g. her own voice
                 # Drop audio recorded while we were talking, including our own voice.
                 while not blocks.empty():
                     blocks.get_nowait()

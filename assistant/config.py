@@ -81,6 +81,9 @@ class ClapSettings:
 class ListenSettings:
     # After greeting you, listen for a question and answer it with Claude.
     enabled: bool = True
+    # Also wake her by saying her name ("Rose", or "Rose, wie spät ist es?").
+    # Uses some computing power while people talk nearby; false = claps only.
+    wake_word: bool = True
     # Whisper model: "tiny", "base", "small", "medium" - bigger is more
     # accurate but slower, and a bigger one-off download (small: about 480 MB).
     model: str = "small"

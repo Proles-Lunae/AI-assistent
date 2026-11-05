@@ -235,9 +235,9 @@ def test_assistant_reports_what_happens(monkeypatch):
     a.brain.answer_in_sentences = lambda *args: iter(["Es ist acht Uhr, Sir."])
     a.converse(queue.Queue())
     kinds = [(k, d.get("state") or d.get("text") or d.get("level")) for k, d in events]
-    assert kinds[:6] == [("state", "listening"), ("level", 0.02), ("state", "thinking"),
-                         ("heard", "Wie spät ist es?"), ("state", "speaking"),
-                         ("said", "Es ist acht Uhr, Sir.")]
+    assert kinds[:7] == [("state", "listening"), ("level", 0.02), ("state", "thinking"),
+                         ("heard", "Wie spät ist es?"), ("state", "thinking"),
+                         ("state", "speaking"), ("said", "Es ist acht Uhr, Sir.")]
     assert all(not d.get("continued") for k, d in events if k == "said" and d["text"] == "Danke.")
     assert ("heard", "Danke.") in kinds and ("said", DE.goodbye) in kinds
 
@@ -384,7 +384,8 @@ def test_talk_button_skips_the_greeting(monkeypatch):
     monkeypatch.setattr(a, "converse", lambda blocks: did.append("conversation"))
     monkeypatch.setattr(a, "warm_up", lambda: None)
 
-    def fake_listen(settings, on_double_clap, on_clap=None, talk_request=None, on_talk=None):
+    def fake_listen(settings, on_double_clap, on_clap=None, talk_request=None, on_talk=None,
+                    **wake):
         on_talk("blocks")
         on_double_clap("blocks")
 

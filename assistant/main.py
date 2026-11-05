@@ -88,17 +88,27 @@ class Assistant:
         self.speaker.finish()  # let the greeting end, then carry straight on
         self.speaker.play(speech)
 
-    def converse(self, blocks) -> None:
-        """Listen for questions and answer them, until you tell her to stop."""
+    def converse(self, blocks, first_question: str = "") -> None:
+        """Listen for questions and answer them, until you tell her to stop.
+
+        ``first_question`` is one already asked (e.g. "Rose, wie spät ist es?"):
+        she answers that before listening for more.
+        """
         rate = self.config.clap.sample_rate
         settings = self.config.listen
         history: list[tuple[str, str]] = []
         ready_beep = True  # beep when she starts listening, and after each answer
         quiet_for = 0.0
+        pending = first_question.strip()
         while True:
             if self.stop_request.is_set():  # ended from the window
                 self.stop_request.clear()
                 return
+            if pending:
+                question, pending = pending, ""
+                if not self._answer(question, history):
+                    return
+                continue
             if ready_beep:
                 self.speaker.beep()
                 self.events("state", state="listening")
@@ -132,23 +142,31 @@ class Assistant:
             if not question:
                 self.speaker.play(self.recording(self.words.didnt_catch))
                 continue
-            print(f"You: {question}")
-            self.events("heard", text=question)
-            if is_goodbye(question):
-                self.speaker.play(self.recording(self.words.goodbye))
+            if not self._answer(question, history):
                 return
-            print("(Thinking...)")
-            try:
-                # She starts speaking as soon as Claude has written the first
-                # sentence, and says the rest while it's still being written.
-                answer = self.speaker.say_sentences(self.brain.answer_in_sentences(
-                    question, history, self.context(), self.config.user.address(),
-                    self.words.claude_instruction))
-            except BrainError as exc:
-                self.note(f"Claude couldn't answer: {exc}")
-                self.speaker.play(self.recording(self.words.no_brain))
-                continue  # she can still be asked again, or told to stop
-            history.append((question, answer))
+
+    def _answer(self, question: str, history: list[tuple[str, str]]) -> bool:
+        """Answer one question (remembered in ``history``). False if it was a
+        goodbye, so the conversation ends."""
+        print(f"You: {question}")
+        self.events("heard", text=question)
+        if is_goodbye(question):
+            self.speaker.play(self.recording(self.words.goodbye))
+            return False
+        self.events("state", state="thinking")
+        print("(Thinking...)")
+        try:
+            # She starts speaking as soon as Claude has written the first
+            # sentence, and says the rest while it's still being written.
+            answer = self.speaker.say_sentences(self.brain.answer_in_sentences(
+                question, history, self.context(), self.config.user.address(),
+                self.words.claude_instruction))
+        except BrainError as exc:
+            self.note(f"Claude couldn't answer: {exc}")
+            self.speaker.play(self.recording(self.words.no_brain))
+            return True  # she can still be asked again, or told to stop
+        history.append((question, answer))
+        return True
 
     def hear_out(self, blocks, audio) -> str:
         """Turn your question into text, waiting a little longer while it sounds
@@ -246,10 +264,28 @@ class Assistant:
             self.events("state", state="waiting")
             print("\nListening for a double clap again...")
 
+        def on_wake(blocks, question: str) -> None:
+            print(f"\nShe was called by her name{': ' + question if question else '!'}")
+            self.stop_request.clear()
+            if question:  # "Rose, wie spät ist es?": straight to the answer
+                self.converse(blocks, first_question=question)
+            else:  # just "Rose": like a double clap
+                self.wake_up()
+                self.converse(blocks)
+            self.events("state", state="waiting")
+            print("\nListening for a double clap again...")
+
+        wake = None
+        if self.config.listen.enabled and self.config.listen.wake_word:
+            from .wake import WakeListener
+
+            wake = WakeListener(self.transcriber, [self.name], self.config.clap.sample_rate,
+                                self.config.listen)
+            print(f'Also listening for her name: "{self.name}"')
         print("Listening for a double clap... (press Ctrl+C to quit)")
         self.events("state", state="waiting")
         listen(self.config.clap, on_double_clap, on_clap=lambda: self.events("clap"),
-               talk_request=self.talk_request, on_talk=on_talk)
+               talk_request=self.talk_request, on_talk=on_talk, wake=wake, on_wake=on_wake)
 
 
 def is_goodbye(text: str) -> bool:

@@ -163,6 +163,11 @@ class Transcriber:
         self.default_language = language  # [user] language, used when [listen] has none
         self.prompt = prompt  # an example sentence, which helps recognition
         self._model = None
+        # Listening for her name and a conversation can both want the model;
+        # this makes them take turns.
+        import threading
+
+        self._lock = threading.Lock()
 
     def language(self) -> str | None:
         """The language code for Whisper, or None to let it detect the language."""
@@ -171,6 +176,10 @@ class Transcriber:
 
     def load(self) -> None:
         """Load (and the first time, download) the model. Takes a few seconds."""
+        with self._lock:
+            self._load()
+
+    def _load(self) -> None:
         if self._model is None:
             quiet_model_download()
             from faster_whisper import WhisperModel
@@ -182,14 +191,20 @@ class Transcriber:
             self._model = WhisperModel(self.s.model, device="cpu", compute_type="int8")
             print(f"(Speech recognition ready after {time.monotonic() - started:.1f} s)")
 
-    def transcribe(self, audio: np.ndarray, sample_rate: int) -> str:
-        self.load()
-        segments, _ = self._model.transcribe(
-            louder(to_whisper_rate(audio, sample_rate)),
-            language=self.language(),
-            beam_size=5,  # weigh up several readings: more accurate than the fastest
-            vad_filter=True,  # ignore stretches without speech
-            initial_prompt=self.prompt or None,
-            condition_on_previous_text=False,
-        )
-        return " ".join(s.text.strip() for s in segments).strip()
+    def transcribe(self, audio: np.ndarray, sample_rate: int, quick: bool = False,
+                   prompt: str | None = None) -> str:
+        """Turn speech into text. ``quick`` is faster but a little less careful
+        (used to listen for her name); ``prompt`` replaces the example sentence."""
+        sound = louder(to_whisper_rate(audio, sample_rate))
+        with self._lock:
+            self._load()
+            segments, _ = self._model.transcribe(
+                sound,
+                language=self.language(),
+                # weigh up several readings: more accurate than the fastest
+                beam_size=1 if quick else 5,
+                vad_filter=True,  # ignore stretches without speech
+                initial_prompt=(self.prompt if prompt is None else prompt) or None,
+                condition_on_previous_text=False,
+            )
+            return " ".join(s.text.strip() for s in segments).strip()

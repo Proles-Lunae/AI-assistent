@@ -629,8 +629,10 @@ def orb_icon(size: int = 256, colours=ORB_COLOURS["listening"]) -> QPixmap:
 
 
 class Window(QWidget):
-    def __init__(self, words: Phrases, on_talk=None, on_stop=None, name: str | None = None):
+    def __init__(self, words: Phrases, on_talk=None, on_stop=None, name: str | None = None,
+                 wake_word: bool = False):
         super().__init__()
+        self.wake_word = wake_word  # she also wakes when called by her name
         self.words = words
         self.name = name or words.app_title  # what the circle shows
         self.on_talk = on_talk or (lambda: None)  # Talk button: start a conversation
@@ -741,6 +743,12 @@ class Window(QWidget):
             else:
                 self.bring_back()
 
+    def status_text(self, state: str) -> str:
+        """The caption under the circle; while waiting, it says how to wake her."""
+        if state == "waiting" and self.wake_word:
+            return self.words.status["waiting_name"].format(name=self.name)
+        return self.words.status.get(state, "")
+
     def _talk_clicked(self) -> None:
         if not self.talk.isEnabled():
             return
@@ -818,11 +826,11 @@ class Window(QWidget):
         if kind == "state":
             state = data["state"]
             self.orb.set_state(state)
-            self._set_status(self.words.status.get(state, ""), problem=state == "problem")
+            self._set_status(self.status_text(state), problem=state == "problem")
             self._show_button_for(state)
             self.chat.show_thinking(state == "thinking")
             if self.tray:
-                self.tray.setToolTip(f"{self.name}: {self.words.status.get(state, '')}")
+                self.tray.setToolTip(f"{self.name}: {self.status_text(state)}")
         elif kind == "said":
             self.chat.show_thinking(False)
             if data.get("continued"):
@@ -1006,7 +1014,8 @@ def run_window(config: Config, minimized: bool = False) -> None:
     app.setApplicationName(assistant.name)
     app.setQuitOnLastWindowClosed(False)  # hidden in the tray isn't "closed"
     window = Window(assistant.words, on_talk=assistant.request_talk,
-                    on_stop=assistant.request_stop, name=assistant.name)
+                    on_stop=assistant.request_stop, name=assistant.name,
+                    wake_word=config.listen.enabled and config.listen.wake_word)
     bridge.event.connect(window.on_event)
     window.server = answer_later_starts(window, version)
     if minimized and window.tray is not None:
