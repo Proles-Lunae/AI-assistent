@@ -110,7 +110,8 @@ standard greeting:
 | 11am – 6pm | Good afternoon |
 | 6pm – 3am | Good evening |
 
-For each time frame, the greeting and a one-sentence forecast for that frame's
+For each time frame, the greeting and a one-sentence forecast (the conditions, the
+latest measured temperature, and the chance of rain only when it's over 20%) for that frame's
 hours (for example 6pm–3am for the evening) are made together as **one
 recording**, in the background (`assistant/briefing.py`). When you clap, it plays
 straight away, with no pause between the greeting and the forecast. Every clap in

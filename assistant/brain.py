@@ -72,14 +72,16 @@ class ClaudeBrain:
     def weather_briefing(self, weather: WeatherReport, start: datetime) -> str:
         """Ask Claude for a one-sentence forecast for the time frame at ``start``."""
         period = time_of_day(start)
+        facts = weather.spoken_facts()
+        rain = ("and the chance of rain" if "rain_chance_percent" in facts
+                else "and do not mention any chance of rain")
         prompt = (
             f"You have just greeted the user with '{GREETINGS[period]}'. Do not greet "
             f"them again. This is for {start:%A} {period}.\n"
-            f"Here is the forecast for the {period} ({start:%H:%M} to {frame_end(start):%H:%M}) "
-            "as JSON; temperature is at the start, high and low are for the whole period:\n"
-            f"{json.dumps(weather.as_dict())}\n"
-            f"Give the weather for the {period} in ONE short spoken sentence of at "
-            "most 25 words: the conditions, the high and low, and the chance of rain. "
-            "Nothing else."
+            "Here is the weather as JSON; temperature is the latest measured one, "
+            f"conditions are for the {period} ({start:%H:%M} to {frame_end(start):%H:%M}):\n"
+            f"{json.dumps(facts)}\n"
+            f"Give the weather in ONE short spoken sentence of at most 20 words: the "
+            f"conditions, the temperature {rain}. No high or low. Nothing else."
         )
         return first_sentence(self.ask(prompt))

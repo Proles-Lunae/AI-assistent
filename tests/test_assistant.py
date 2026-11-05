@@ -232,10 +232,44 @@ def test_weather_summary_is_one_sentence():
     assert "Berlin" in text and "80 percent" in text
 
 
-def test_weather_numbers_are_rounded_for_claude():
+def test_claude_gets_latest_temperature_and_no_high_or_low():
     report = WeatherReport("Berlin", "fog", 11.4, 9.6, 13.0, 7.5, 0, 15.2, "°C", "km/h")
-    data = report.as_dict()
-    assert (data["temperature"], data["feels_like"], data["low"]) == (11, 10, 8)
+    assert report.spoken_facts() == {
+        "city": "Berlin", "conditions": "fog", "temperature": 11, "unit": "°C"}
+
+
+def test_rain_chance_only_mentioned_above_20_percent():
+    def report(rain):
+        return WeatherReport("Berlin", "overcast", 8, 6, 10, 5, rain, 18, "°C", "km/h")
+
+    for rain in (0, 15, 20):
+        assert "rain_chance_percent" not in report(rain).spoken_facts()
+        assert "percent" not in report(rain).summary("evening")
+    assert report(21).spoken_facts()["rain_chance_percent"] == 21
+    assert "21 percent chance of rain this evening" in report(21).summary("evening")
+
+
+def test_simple_forecast_wording():
+    r = WeatherReport("Berlin", "light rain", 8.4, 6, 10.2, 4.6, 70, 18, "°C", "km/h")
+    assert r.summary("evening") == (
+        "In Berlin it's 8 degrees and light rain, with a 70 percent chance of rain this evening.")
+    assert "high" not in r.summary() and "low" not in r.summary()
+
+
+def test_prompt_tells_claude_to_skip_unlikely_rain(monkeypatch):
+    from assistant.brain import ClaudeBrain
+    from assistant.config import BrainSettings
+
+    prompts = []
+    brain = ClaudeBrain(BrainSettings())
+    monkeypatch.setattr(brain, "ask", lambda prompt: prompts.append(prompt) or "Fine.")
+    dry = WeatherReport("Berlin", "clear sky", 8, 6, 10, 5, 10, 18, "°C", "km/h")
+    wet = WeatherReport("Berlin", "rain", 8, 6, 10, 5, 80, 18, "°C", "km/h")
+    brain.weather_briefing(dry, datetime(2026, 1, 2, 18))
+    brain.weather_briefing(wet, datetime(2026, 1, 2, 18))
+    assert "do not mention any chance of rain" in prompts[0] and "rain_chance" not in prompts[0]
+    assert '"rain_chance_percent": 80' in prompts[1]
+    assert all("No high or low" in p for p in prompts)
 
 
 def test_first_sentence_keeps_only_one():
@@ -472,7 +506,7 @@ def test_briefing_fallbacks(monkeypatch):
 
     a.brain.weather_briefing = no_claude
     simple = a.build_briefing(evening)
-    assert simple.complete and "this evening expect light rain" in simple.speech.text
+    assert simple.complete and "8 degrees and light rain" in simple.speech.text
 
     def no_weather(*args):
         raise ConnectionError("offline")
@@ -696,3 +730,16 @@ def test_stand_in_claude_failing_is_reported(tmp_path, monkeypatch):
     monkeypatch.setenv("STAND_IN_FAIL", "1")
     with pytest.raises(BrainError, match="exit 1.*Not logged in"):
         ClaudeBrain(BrainSettings()).ask("Hi")
+
+
+def test_latest_measured_temperature_is_used(monkeypatch):
+    from assistant import weather
+
+    monkeypatch.setattr(weather, "detect_location", lambda: (1.0, 2.0, "Here"))
+    now = datetime.now().replace(minute=0, second=0, microsecond=0)
+    forecast = {"hourly": hourly_forecast(now, 12, [5] * 12, [3] * 12, [20] * 12),
+                "current": {"temperature_2m": 7.6}}
+    monkeypatch.setattr(weather, "_get_json", lambda url, params: forecast)
+    assert weather.get_weather("").temperature == 7.6
+    del forecast["current"]  # older/odd reply: fall back to the hourly value
+    assert weather.get_weather("").temperature == 5
