@@ -55,6 +55,10 @@ class Phrases:
               "problem": "Something's wrong – see below"}
     show_window = "Show"
     quit_app = "Quit"
+    talk_button = "Talk"
+    end_button = "End conversation"
+    autostart = "Start with Windows"
+    autostart_failed = "Couldn't change starting with Windows"
     tray_hint = "I'm still here, next to the clock. Clap twice whenever you need me."
 
     def greeting(self, period: str, address: str) -> str:
@@ -104,6 +108,10 @@ class German(Phrases):
               "speaking": "Ich spreche…", "problem": "Etwas stimmt nicht – siehe unten"}
     show_window = "Anzeigen"
     quit_app = "Beenden"
+    talk_button = "Sprechen"
+    end_button = "Gespräch beenden"
+    autostart = "Mit Windows starten"
+    autostart_failed = "Mit Windows starten ließ sich nicht ändern"
     tray_hint = ("Ich bin weiter da, unten neben der Uhr. Klatschen Sie zweimal, "
                  "wenn Sie mich brauchen.")
     unfinished_words = ("und", "oder", "aber", "weil", "dass", "denn", "wenn", "ob", "also",

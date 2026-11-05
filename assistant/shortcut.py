@@ -1,7 +1,9 @@
-"""Create a desktop shortcut that starts her window, with no Command Prompt."""
+"""Shortcuts that start her window with no Command Prompt: on the desktop, and in
+Windows' Startup folder so she starts when you log in."""
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -35,15 +37,17 @@ def _ps(text: str) -> str:
     return "'" + str(text).replace("'", "''") + "'"
 
 
-def shortcut_script(name: str, target: Path, arguments: str, folder: Path, icon: Path) -> str:
-    """PowerShell that puts a shortcut on the desktop and prints where it went.
+def shortcut_script(name: str, target: Path, arguments: str, folder: Path, icon: Path,
+                    place: str = "Desktop") -> str:
+    """PowerShell that puts a shortcut in ``place`` ("Desktop" or "Startup")
+    and prints where it went.
 
-    The desktop is looked up with GetFolderPath, so a desktop moved into
+    The folder is looked up with GetFolderPath, so a desktop moved into
     OneDrive is found too.
     """
     return "; ".join([
-        "$desktop = [Environment]::GetFolderPath('Desktop')",
-        f"$path = Join-Path $desktop {_ps(name + '.lnk')}",
+        f"$folder = [Environment]::GetFolderPath({_ps(place)})",
+        f"$path = Join-Path $folder {_ps(name + '.lnk')}",
         "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($path)",
         f"$s.TargetPath = {_ps(target)}",
         f"$s.Arguments = {_ps(arguments)}",
@@ -55,15 +59,47 @@ def shortcut_script(name: str, target: Path, arguments: str, folder: Path, icon:
     ])
 
 
-def create_desktop_shortcut(name: str) -> str:
-    """Put a shortcut called ``name`` on the desktop; returns its path."""
+def create_shortcut(name: str, place: str = "Desktop", arguments: str = "-m assistant") -> str:
+    """Put a shortcut called ``name`` in ``place``; returns its path."""
     if sys.platform != "win32":
-        raise RuntimeError("desktop shortcuts are only made on Windows")
+        raise RuntimeError("shortcuts are only made on Windows")
     icon = make_icon()
-    script = shortcut_script(name, windowless_python(), "-m assistant", PROJECT_ROOT, icon)
+    script = shortcut_script(name, windowless_python(), arguments, PROJECT_ROOT, icon, place)
     result = subprocess.run(
         ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
         capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "PowerShell couldn't create the shortcut")
     return result.stdout.strip()
+
+
+def create_desktop_shortcut(name: str) -> str:
+    return create_shortcut(name, "Desktop")
+
+
+# -- Starting with Windows ---------------------------------------------------
+# A shortcut in the Startup folder starts her when you log in, hidden in the
+# tray (--minimized), so the window doesn't pop up every time.
+AUTOSTART_ARGUMENTS = "-m assistant --minimized"
+
+
+def startup_folder() -> Path:
+    """Windows' Startup folder for your user account."""
+    appdata = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+    return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+
+
+def autostart_path(name: str) -> Path:
+    return startup_folder() / f"{name}.lnk"
+
+
+def autostart_enabled(name: str) -> bool:
+    return sys.platform == "win32" and autostart_path(name).exists()
+
+
+def set_autostart(name: str, enabled: bool) -> None:
+    """Start her when you log in to Windows (or stop doing that)."""
+    if enabled:
+        create_shortcut(name, "Startup", AUTOSTART_ARGUMENTS)
+    else:
+        autostart_path(name).unlink(missing_ok=True)

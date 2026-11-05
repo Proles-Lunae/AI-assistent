@@ -35,6 +35,8 @@ class Assistant:
     def __init__(self, config: Config, events=None):
         self.config = config
         self.events = events or (lambda kind, **data: None)
+        self.talk_request = threading.Event()  # the window's Talk button
+        self.stop_request = threading.Event()  # the window's "end conversation" button
         self.words = phrases_for(config.user.language)  # everything she says, in her language
         self.speaker = Speaker(config.voice, self.words.code, self.words.voice)
         self.speaker.on_speak = self._speaking
@@ -93,6 +95,9 @@ class Assistant:
         ready_beep = True  # beep when she starts listening, and after each answer
         quiet_for = 0.0
         while True:
+            if self.stop_request.is_set():  # ended from the window
+                self.stop_request.clear()
+                return
             if ready_beep:
                 self.speaker.beep()
                 self.events("state", state="listening")
@@ -100,10 +105,13 @@ class Assistant:
                 print('Listening to you... (say "stop" or "goodbye" when you\'re done)')
                 ready_beep, quiet_for = False, 0.0
             try:
-                audio = record_question(blocks, rate, settings, on_level=self._level)
+                audio = record_question(blocks, rate, settings, on_level=self._level,
+                                        stop=self.stop_request)
             except MicrophoneStopped as exc:
                 print(f"(Stopped listening: {exc})")
                 return
+            if audio is None and self.stop_request.is_set():
+                continue  # ended from the window (handled at the top)
             if audio is None:  # nothing said yet: keep waiting quietly
                 quiet_for += settings.wait_seconds
                 if settings.end_after_quiet and quiet_for >= settings.end_after_quiet:
@@ -209,21 +217,38 @@ class Assistant:
         self.wake_up()
         print(f"(Took {time.monotonic() - start:.1f} seconds, including speaking)")
 
+    def request_talk(self) -> None:
+        """Start a conversation without clapping (the window's Talk button)."""
+        self.stop_request.clear()
+        self.talk_request.set()
+
+    def request_stop(self) -> None:
+        """End the conversation (the window's "end conversation" button)."""
+        self.stop_request.set()
+
     def run(self) -> None:
         print("Getting ready in the background...")
         threading.Thread(target=self.warm_up, name="warm-up", daemon=True).start()
 
         def on_double_clap(blocks) -> None:
             print("\nDouble clap heard!")
+            self.stop_request.clear()
             self.wake_up()
             if self.config.listen.enabled:
                 self.converse(blocks)
             self.events("state", state="waiting")
             print("\nListening for a double clap again...")
 
+        def on_talk(blocks) -> None:
+            print("\nTalk button pressed!")
+            self.converse(blocks)  # no greeting: straight to listening
+            self.events("state", state="waiting")
+            print("\nListening for a double clap again...")
+
         print("Listening for a double clap... (press Ctrl+C to quit)")
         self.events("state", state="waiting")
-        listen(self.config.clap, on_double_clap, on_clap=lambda: self.events("clap"))
+        listen(self.config.clap, on_double_clap, on_clap=lambda: self.events("clap"),
+               talk_request=self.talk_request, on_talk=on_talk)
 
 
 def is_goodbye(text: str) -> bool:
@@ -234,7 +259,7 @@ def is_goodbye(text: str) -> bool:
         f" {phrase} " in f" {short} " for phrase in all_goodbye_words())
 
 
-def open_window(config: Config) -> bool:
+def open_window(config: Config, minimized: bool = False) -> bool:
     """Open her window; False if the window toolkit (PySide6) isn't installed."""
     try:
         from .window import run_window
@@ -242,7 +267,7 @@ def open_window(config: Config) -> bool:
         print(f"(Her window isn't available ({exc}); running here instead. "
               "Install it with: pip install -r requirements.txt)")
         return False
-    run_window(config)
+    run_window(config, minimized)
     return True
 
 
@@ -270,6 +295,21 @@ def make_shortcut(config: Config) -> None:
     print("Double-click it to start her, no Command Prompt needed.")
 
 
+def change_autostart(config: Config, enabled: bool) -> None:
+    from .shortcut import autostart_path, set_autostart
+
+    name = phrases_for(config.user.language).app_title
+    try:
+        set_autostart(name, enabled)
+    except Exception as exc:
+        print(f"Couldn't change starting with Windows: {exc}")
+        return
+    if enabled:
+        print(f"She'll now start with Windows, hidden in the tray ({autostart_path(name)}).")
+    else:
+        print("She won't start with Windows any more.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Clap-activated voice assistant")
     parser.add_argument("--config", type=Path, help="path to a config.toml file")
@@ -285,17 +325,24 @@ def main() -> None:
                         help="run in this console window instead of her own window")
     parser.add_argument("--shortcut", action="store_true",
                         help="put a shortcut on the desktop that opens her window")
+    parser.add_argument("--autostart", choices=("on", "off"),
+                        help="start her (hidden in the tray) when you log in to Windows")
+    parser.add_argument("--minimized", action="store_true",
+                        help="start hidden in the tray (used when Windows starts her)")
     args = parser.parse_args()
 
     console_only = any((args.console, args.now, args.levels, args.devices, args.say, args.talk,
-                        args.shortcut))
+                        args.shortcut, args.autostart))
     try:
         config = load_config(args.config, report=True)
         print(f'She will call you: "{config.user.address()}"')
         if args.shortcut:
             make_shortcut(config)
             return
-        if not console_only and open_window(config):
+        if args.autostart:
+            change_autostart(config, args.autostart == "on")
+            return
+        if not console_only and open_window(config, args.minimized):
             return
         assistant = Assistant(config)
         if args.devices:

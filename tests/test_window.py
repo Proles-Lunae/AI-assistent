@@ -173,7 +173,7 @@ def test_window_opens_by_default_and_console_on_request(monkeypatch, tmp_path):
     from assistant import main
 
     opened, ran = [], []
-    monkeypatch.setattr(main, "open_window", lambda config: opened.append(1) or True)
+    monkeypatch.setattr(main, "open_window", lambda config, minimized=False: opened.append(1) or True)
     monkeypatch.setattr(main.Assistant, "run", lambda self: ran.append(1))
     monkeypatch.setattr(main.Assistant, "__init__", lambda self, config, events=None: None)
     config = tmp_path / "config.toml"
@@ -267,3 +267,191 @@ def test_an_answer_spoken_in_pieces_stays_one_bubble(window):
     window.on_event("said", {"text": "Der erste Teil erschien 1808.", "continued": True})
     assert bubbles(window)[-2:] == [("you", "Wer hat Faust geschrieben?"),
                                     ("her", "Goethe, Sir. Der erste Teil erschien 1808.")]
+
+
+# -- Talk button ---------------------------------------------------------------
+
+@pytest.fixture
+def talk_window(app):
+    from assistant.window import Window
+
+    calls = []
+    w = Window(DE, on_talk=lambda: calls.append("talk"), on_stop=lambda: calls.append("stop"))
+    w.tray = None
+    yield w, calls
+    w.quitting = True
+    w.deleteLater()
+
+
+def test_talk_button_follows_her_state(talk_window):
+    w, _ = talk_window
+    assert not w.talk.isEnabled()  # still starting
+    w.on_event("state", {"state": "waiting"})
+    assert w.talk.isEnabled() and w.talk.text() == "Sprechen"
+    for state in ("listening", "thinking", "speaking"):
+        w.on_event("state", {"state": state})
+        assert w.talk.isEnabled() and w.talk.text() == "Gespräch beenden"
+    w.on_event("problem", {"text": "Mikrofon fehlt"})
+    assert not w.talk.isEnabled()
+
+
+def test_talk_button_starts_and_ends_a_conversation(talk_window):
+    w, calls = talk_window
+    w.on_event("state", {"state": "waiting"})
+    w.talk.click()
+    assert calls == ["talk"] and not w.talk.isEnabled()  # no double clicks meanwhile
+    w.on_event("state", {"state": "listening"})
+    w.talk.click()
+    assert calls == ["talk", "stop"]
+
+
+def test_space_bar_works_like_the_button(talk_window):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    w, calls = talk_window
+    w.show()
+    w.activateWindow()
+    w.on_event("state", {"state": "waiting"})
+    w._talk_clicked()  # what the space-bar shortcut calls
+    assert calls == ["talk"]
+    QTest.keyClick(w, Qt.Key.Key_Space)  # disabled until she has started: ignored
+    assert calls == ["talk"]
+
+
+def test_talk_request_starts_a_conversation_without_clapping(monkeypatch):
+    """The microphone loop notices the button and starts talking, no claps needed."""
+    import threading
+
+    from assistant import microphone
+    from assistant.config import ClapSettings
+
+    blocks = queue.Queue()
+    for _ in range(20):
+        blocks.put(np.zeros(1024, np.float32))
+    talk = threading.Event()
+    talk.set()
+    started = []
+
+    class Done(Exception):
+        pass
+
+    def on_talk(q):
+        started.append(q)
+        raise Done  # end the endless loop for the test
+
+    monkeypatch.setattr(microphone, "choose_microphone", lambda s: None)
+    monkeypatch.setattr(microphone, "recording", lambda s, d: __import__("contextlib").nullcontext(blocks))
+    with pytest.raises(Done):
+        microphone.listen(ClapSettings(), lambda q: None, talk_request=talk, on_talk=on_talk)
+    assert started == [blocks] and not talk.is_set()
+
+
+def test_ending_from_the_window_stops_the_conversation(monkeypatch):
+    from assistant import main
+
+    a = main.Assistant(Config())
+    a.speaker.beep = lambda: None
+    seen_stop = []
+
+    def fake_record(blocks, rate, settings, stop=None, **options):
+        seen_stop.append(stop)
+        a.request_stop()  # you press "Gespräch beenden" while she listens
+        return None
+
+    monkeypatch.setattr(main, "record_question", fake_record)
+    a.converse(queue.Queue())  # returns instead of listening forever
+    assert seen_stop == [a.stop_request] and not a.stop_request.is_set()
+
+
+def test_listening_stops_at_once_when_ended():
+    import threading
+
+    from assistant.config import ListenSettings
+    from assistant.listening import record_question
+
+    stop = threading.Event()
+    stop.set()
+    assert record_question(queue.Queue(), 44100, ListenSettings(), stop=stop) is None
+
+
+def test_talk_button_skips_the_greeting(monkeypatch):
+    from assistant import main
+
+    a = main.Assistant(Config())
+    did = []
+    monkeypatch.setattr(a, "wake_up", lambda: did.append("greeting"))
+    monkeypatch.setattr(a, "converse", lambda blocks: did.append("conversation"))
+    monkeypatch.setattr(a, "warm_up", lambda: None)
+
+    def fake_listen(settings, on_double_clap, on_clap=None, talk_request=None, on_talk=None):
+        on_talk("blocks")
+        on_double_clap("blocks")
+
+    monkeypatch.setattr(main, "listen", fake_listen)
+    a.run()
+    assert did == ["conversation", "greeting", "conversation"]
+
+
+# -- Starting with Windows -------------------------------------------------------
+
+def test_autostart_shortcut_goes_to_the_startup_folder_and_starts_hidden(monkeypatch, tmp_path):
+    from assistant import shortcut
+
+    made = []
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setattr(shortcut.sys, "platform", "win32")
+
+    def fake_create(name, place="Desktop", arguments="-m assistant"):
+        made.append((name, place, arguments))
+        shortcut.autostart_path(name).parent.mkdir(parents=True, exist_ok=True)
+        shortcut.autostart_path(name).touch()
+        return str(shortcut.autostart_path(name))
+
+    monkeypatch.setattr(shortcut, "create_shortcut", fake_create)
+    assert not shortcut.autostart_enabled("Assistentin")
+    shortcut.set_autostart("Assistentin", True)
+    assert made == [("Assistentin", "Startup", "-m assistant --minimized")]
+    assert shortcut.autostart_enabled("Assistentin")
+    assert shortcut.autostart_path("Assistentin") == (
+        tmp_path / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "Assistentin.lnk")
+    shortcut.set_autostart("Assistentin", False)
+    assert not shortcut.autostart_enabled("Assistentin")
+    shortcut.set_autostart("Assistentin", False)  # turning it off twice is fine
+
+
+def test_startup_shortcut_script_uses_the_startup_folder():
+    from pathlib import Path
+
+    from assistant.shortcut import shortcut_script
+
+    script = shortcut_script("Assistentin", Path("pythonw.exe"), "-m assistant --minimized",
+                             Path("C:/x"), Path("C:/x/a.ico"), place="Startup")
+    assert "GetFolderPath('Startup')" in script and "'-m assistant --minimized'" in script
+
+
+def test_autostart_command(monkeypatch, tmp_path, capsys):
+    from assistant import main, shortcut
+
+    changes = []
+    monkeypatch.setattr(shortcut, "set_autostart", lambda name, on: changes.append((name, on)))
+    config = tmp_path / "config.toml"
+    config.write_text("")
+    for value in ("on", "off"):
+        monkeypatch.setattr(sys, "argv", ["assistant", "--config", str(config), "--autostart", value])
+        main.main()
+    assert changes == [("Assistentin", True), ("Assistentin", False)]
+    out = capsys.readouterr().out
+    assert "start with Windows" in out and "won't start with Windows" in out
+
+
+def test_minimized_start_stays_in_the_tray(monkeypatch, tmp_path):
+    from assistant import main
+
+    calls = []
+    monkeypatch.setattr(main, "open_window", lambda config, minimized=False: calls.append(minimized) or True)
+    config = tmp_path / "config.toml"
+    config.write_text("")
+    monkeypatch.setattr(sys, "argv", ["assistant", "--config", str(config), "--minimized"])
+    main.main()
+    assert calls == [True]

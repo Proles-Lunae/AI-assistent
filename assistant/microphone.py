@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import queue
+import threading
 import time
 from contextlib import contextmanager
 from typing import Callable
@@ -20,10 +21,14 @@ SILENCE_HELP = """
 
 
 def listen(settings: ClapSettings, on_double_clap: Callable[[queue.Queue], None],
-           on_clap: Callable[[], None] | None = None) -> None:
+           on_clap: Callable[[], None] | None = None,
+           talk_request: threading.Event | None = None,
+           on_talk: Callable[[queue.Queue], None] | None = None) -> None:
     """Listen to the microphone forever, calling ``on_double_clap`` on each double clap.
 
     It's given the queue of microphone audio, so it can listen to you too.
+    When ``talk_request`` is set (the window's Talk button), ``on_talk`` is
+    called the same way, as if you'd clapped.
     """
     detector = DoubleClapDetector(settings)
     with recording(settings, choose_microphone(settings)) as blocks:
@@ -39,8 +44,14 @@ def listen(settings: ClapSettings, on_double_clap: Callable[[queue.Queue], None]
                 print(f"  clap heard (loudness {detector.last_peak:.2f}), clap once more...")
                 if on_clap is not None:
                     on_clap()
-            elif result == "double":
-                on_double_clap(blocks)
+            handler = None
+            if result == "double":
+                handler = on_double_clap
+            elif talk_request is not None and talk_request.is_set():
+                talk_request.clear()
+                handler = on_talk or on_double_clap
+            if handler is not None:
+                handler(blocks)
                 # Drop audio recorded while we were talking, including our own voice.
                 while not blocks.empty():
                     blocks.get_nowait()

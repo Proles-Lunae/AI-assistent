@@ -29,14 +29,15 @@ class MicrophoneStopped(RuntimeError):
 
 def record_question(blocks: queue.Queue, sample_rate: int, settings: ListenSettings,
                     wait_seconds: float | None = None, noise: float | None = None,
-                    on_level=None):
+                    on_level=None, stop=None):
     """Record from ``blocks`` until you stop talking.
 
     Waits up to ``wait_seconds`` (default: the setting) for you to start, then
     stops after ``silence_seconds`` of quiet (or ``max_seconds`` in total).
     Returns the audio as one array, or None if you didn't say anything in that
     time. ``noise`` is the room's loudness, if already known. ``on_level`` is
-    told the loudness of each block (for the window's orb).
+    told the loudness of each block (for the window's orb). If ``stop`` (an
+    Event) is set, she stops listening and returns None.
 
     To start, your voice must be clearly louder than the room; once you're
     talking, quieter speech (soft sounds, the ends of words) still counts, so
@@ -50,6 +51,8 @@ def record_question(blocks: queue.Queue, sample_rate: int, settings: ListenSetti
     quiet_for = 0.0
     waited = 0.0
     while True:
+        if stop is not None and stop.is_set():
+            return None
         try:
             block = blocks.get(timeout=1.0)
         except queue.Empty:

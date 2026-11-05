@@ -15,11 +15,11 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from PySide6.QtGui import (QAction, QColor, QFont, QIcon, QPainter, QPen, QPixmap,
-                           QRadialGradient)
+from PySide6.QtGui import (QAction, QColor, QFont, QIcon, QKeySequence, QPainter, QPen,
+                           QPixmap, QRadialGradient, QShortcut)
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QMenu,
-                               QScrollArea, QSizePolicy, QSystemTrayIcon, QVBoxLayout,
-                               QWidget)
+                               QPushButton, QScrollArea, QSizePolicy, QSystemTrayIcon,
+                               QVBoxLayout, QWidget)
 
 from .config import Config
 from .phrases import Phrases
@@ -57,6 +57,13 @@ QScrollArea {{ background: transparent; border: none; }}
 QWidget#chat {{ background: transparent; }}
 QLabel#her {{ background: {SURFACE}; border-radius: 14px; padding: 9px 13px; font-size: 14px; }}
 QLabel#you {{ background: #1f5f6b; border-radius: 14px; padding: 9px 13px; font-size: 14px; }}
+QPushButton#talk {{ background: #1f5f6b; color: {TEXT}; border: none; border-radius: 16px;
+    padding: 9px 26px; font-size: 14px; font-weight: 600; }}
+QPushButton#talk:hover {{ background: #26737f; }}
+QPushButton#talk:pressed {{ background: #1a505a; }}
+QPushButton#talk[ending="true"] {{ background: #3a2f45; }}
+QPushButton#talk[ending="true"]:hover {{ background: #4a3b58; }}
+QPushButton#talk:disabled {{ background: {SURFACE}; color: {MUTED}; }}
 QScrollBar:vertical {{ background: transparent; width: 6px; margin: 2px; }}
 QScrollBar::handle:vertical {{ background: #2a3040; border-radius: 3px; min-height: 24px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
@@ -255,9 +262,11 @@ def orb_icon(size: int = 256, colours=ORB_COLOURS["listening"]) -> QPixmap:
 
 
 class Window(QWidget):
-    def __init__(self, words: Phrases):
+    def __init__(self, words: Phrases, on_talk=None, on_stop=None):
         super().__init__()
         self.words = words
+        self.on_talk = on_talk or (lambda: None)  # Talk button: start a conversation
+        self.on_stop = on_stop or (lambda: None)  # ... and end it again
         self.quitting = False
         self.hint_shown = False
         self.problem = False  # something stops her working: keep that message showing
@@ -292,6 +301,18 @@ class Window(QWidget):
         self.note_timer.setSingleShot(True)
         self.note_timer.timeout.connect(lambda: self.note.setText(""))
 
+        self.talk = QPushButton(words.talk_button)
+        self.talk.setObjectName("talk")
+        self.talk.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.talk.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # space is the shortcut instead
+        self.talk.setEnabled(False)
+        self.talk.clicked.connect(self._talk_clicked)
+        QShortcut(QKeySequence(Qt.Key.Key_Space), self, activated=self._talk_clicked)
+        talk_row = QHBoxLayout()
+        talk_row.addStretch()
+        talk_row.addWidget(self.talk)
+        talk_row.addStretch()
+
         line = QFrame()
         line.setFixedHeight(1)
         line.setStyleSheet(f"background: {SURFACE};")
@@ -304,7 +325,9 @@ class Window(QWidget):
         layout.addWidget(self.orb)
         layout.addWidget(self.status)
         layout.addWidget(self.note)
-        layout.addSpacing(6)
+        layout.addSpacing(4)
+        layout.addLayout(talk_row)
+        layout.addSpacing(10)
         layout.addWidget(line)
         layout.addWidget(self.chat, 1)
 
@@ -321,6 +344,14 @@ class Window(QWidget):
         leave = QAction(self.words.quit_app, menu)
         leave.triggered.connect(self.quit)
         menu.addAction(show)
+        if sys.platform == "win32":
+            from .shortcut import autostart_enabled
+
+            self.autostart = QAction(self.words.autostart, menu)
+            self.autostart.setCheckable(True)
+            self.autostart.setChecked(autostart_enabled(self.words.app_title))
+            self.autostart.toggled.connect(self._autostart_toggled)
+            menu.addAction(self.autostart)
         menu.addSeparator()
         menu.addAction(leave)
         tray.setContextMenu(menu)
@@ -336,6 +367,35 @@ class Window(QWidget):
                 self.hide()
             else:
                 self.bring_back()
+
+    def _talk_clicked(self) -> None:
+        if not self.talk.isEnabled():
+            return
+        if self.talk.property("ending"):
+            self.on_stop()
+        else:
+            self.on_talk()
+        self.talk.setEnabled(False)  # until she reports she's started (or stopped)
+
+    def _show_button_for(self, state: str) -> None:
+        busy = state in ("listening", "thinking", "speaking")
+        self.talk.setText(self.words.end_button if busy else self.words.talk_button)
+        self.talk.setProperty("ending", busy)
+        self.talk.style().unpolish(self.talk)  # apply the matching colour
+        self.talk.style().polish(self.talk)
+        self.talk.setEnabled(state in ("waiting", "listening", "thinking", "speaking"))
+
+    def _autostart_toggled(self, enabled: bool) -> None:
+        from .shortcut import set_autostart
+
+        try:
+            set_autostart(self.words.app_title, enabled)
+        except Exception as exc:
+            print(f"({self.words.autostart_failed}: {exc})")
+            self.on_event("note", {"text": f"{self.words.autostart_failed}: {exc}"})
+            self.autostart.blockSignals(True)
+            self.autostart.setChecked(not enabled)
+            self.autostart.blockSignals(False)
 
     def bring_back(self) -> None:
         self.showNormal()
@@ -370,6 +430,7 @@ class Window(QWidget):
             state = data["state"]
             self.orb.set_state(state)
             self.status.setText(self.words.status.get(state, ""))
+            self._show_button_for(state)
             if self.tray:
                 self.tray.setToolTip(f"{self.words.app_title}: {self.words.status.get(state, '')}")
         elif kind == "said":
@@ -471,8 +532,11 @@ def answer_later_starts(window: Window) -> QLocalServer:
     return server
 
 
-def run_window(config: Config) -> None:
-    """Open her window and start the assistant in the background."""
+def run_window(config: Config, minimized: bool = False) -> None:
+    """Open her window and start the assistant in the background.
+
+    With ``minimized`` (when Windows starts her), she starts hidden in the tray.
+    """
     from .main import Assistant  # here, so the window module stays light to import
 
     app = QApplication.instance() or QApplication(sys.argv)
@@ -484,10 +548,14 @@ def run_window(config: Config) -> None:
     app.setQuitOnLastWindowClosed(False)  # hidden in the tray isn't "closed"
     bridge = Bridge()
     assistant = Assistant(config, events=bridge.send)
-    window = Window(assistant.words)
+    window = Window(assistant.words, on_talk=assistant.request_talk,
+                    on_stop=assistant.request_stop)
     bridge.event.connect(window.on_event)
     window.server = answer_later_starts(window)
-    window.show()
+    if minimized and window.tray is not None:
+        window.hint_shown = True  # she starts in the tray on purpose: no reminder needed
+    else:
+        window.show()
 
     def work() -> None:
         try:

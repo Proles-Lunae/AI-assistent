@@ -78,9 +78,16 @@ Prompt. She opens in her own window:
   wrong (the reason is shown underneath).
 - **The conversation** appears below it as chat bubbles, with the temperature and
   your town at the top.
+- **Sprechen** (or the space bar) starts a conversation without clapping: she
+  beeps and listens straight away, no greeting. While you're talking with her the
+  button says **Gespräch beenden**, to end the conversation with a click (she
+  finishes the sentence she's saying first).
 - **Closing the window** hides her in the tray (the small icons next to the clock):
   she keeps listening for claps. Click the tray icon to bring the window back;
   right-click it and choose **Beenden** to quit.
+- **Start with Windows:** right-click the tray icon and tick **Mit Windows
+  starten**. She then starts when you log in, hidden in the tray, listening for
+  claps. Untick it to stop that. (Or: `python -m assistant --autostart on` / `off`.)
 - Starting her a second time just brings the open window forward.
 - Messages for troubleshooting go to `assistant.log` in the project folder.
 
@@ -96,6 +103,7 @@ Prompt. She opens in her own window:
 | `python -m assistant --devices` | List the microphones |
 | `python -m assistant --talk` | Talk to her right away, without clapping |
 | `python -m assistant --shortcut` | Put the shortcut on the desktop |
+| `python -m assistant --autostart on` | Start her with Windows (`off` to stop) |
 
 In the Command Prompt, press **Ctrl+C** to stop.
 
