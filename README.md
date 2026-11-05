@@ -1,7 +1,8 @@
 # Clap-activated voice assistant
 
 Clap twice and the assistant wakes up. It greets you in a British female voice
-and tells you the temperature outside: "Good evening, sir. It's 8 degrees."
+and tells you the temperature outside, with a useful tip:
+"Good evening, sir. It's 8 degrees outside. A jacket should do."
 
 - **Wake word:** two claps, picked up by your microphone.
 - **Voice:** Microsoft's free "Sonia" neural voice (British English, female), via `edge-tts`.
@@ -109,10 +110,21 @@ standard greeting:
 | 11am – 6pm | Good afternoon |
 | 6pm – 3am | Good evening |
 
-**What she says:** the greeting, then the temperature, checked fresh at every
-clap. The chance of rain is added only when it's over 20% for the rest of the
-time frame: "Good evening, sir. It's 8 degrees, with a 70 percent chance of rain
-this evening."
+**What she says:** the greeting, the temperature (checked fresh at every clap),
+and a tip for the weather:
+
+| Weather | Tip |
+| --- | --- |
+| Chance of rain over 20% | "There's a 70 percent chance of rain this evening, so take an umbrella" (and a warm coat / jacket when it's cold) |
+| 0° or below | "It's freezing, so wrap up warm and mind the ice." |
+| up to 7° | "A warm coat would be a good idea." |
+| up to 14° | "A jacket should do." |
+| up to 22° | "A light jumper should be plenty." |
+| up to 28° | "It's warm, so dress lightly." |
+| above 28° | "It's hot, so drink plenty of water and stay in the shade." |
+
+To change the wording or the temperatures, edit `TIPS` and `RAIN_EXTRAS` at the top
+of `assistant/weather.py`.
 
 **Why there's no wait:** the three greetings are recorded when the program starts.
 When you clap, the greeting plays straight away, and while she says it (about a

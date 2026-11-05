@@ -230,9 +230,10 @@ def test_rain_chance_only_mentioned_above_20_percent():
         return WeatherReport("Berlin", "overcast", 8, 6, 10, 5, rain, 18, "°C", "km/h")
 
     for rain in (0, 15, 20):
-        assert report(rain).spoken("evening") == "It's 8 degrees."
-    assert report(21).spoken("evening") == (
-        "It's 8 degrees, with a 21 percent chance of rain this evening.")
+        assert "percent" not in report(rain).spoken("evening")
+    assert report(21).spoken("evening") == ("It's 8 degrees outside. There's a 21 percent "
+                                             "chance of rain this evening, so take an umbrella "
+                                             "and a jacket.")
 
 
 def test_first_sentence_keeps_only_one():
@@ -630,10 +631,10 @@ def test_spoken_temperature_wording():
     def at(temp):
         return WeatherReport("Berlin", "fog", temp, 0, 0, 0, 0, 0, "°C", "km/h").spoken("morning")
 
-    assert at(8.4) == "It's 8 degrees."
-    assert at(1.2) == "It's 1 degree."
-    assert at(-0.4) == "It's 0 degrees."
-    assert at(-3.2) == "It's minus 3 degrees."
+    assert at(8.4) == "It's 8 degrees outside. A jacket should do."
+    assert at(1.2).startswith("It's 1 degree outside.")
+    assert at(-0.4).startswith("It's 0 degrees outside.")
+    assert at(-3.2).startswith("It's minus 3 degrees outside.")
     assert "Berlin" not in at(8) and "fog" not in at(8)  # no city, no conditions
 
 
@@ -669,7 +670,8 @@ def test_clap_greets_then_gives_the_fresh_temperature(monkeypatch):
     greeting, finished, weather = played
     assert greeting.startswith("Good ") and greeting.endswith(", sir.")
     assert finished == "<greeting finished>"  # the weather follows only after the greeting
-    assert weather == f"It's 8 degrees, with a 70 percent chance of rain this {greeting[5:-6]}."
+    assert weather == (f"It's 8 degrees outside. There's a 70 percent chance of rain this "
+                       f"{greeting[5:-6]}, so take an umbrella and a jacket.")
 
 
 def test_greeting_does_not_wait_for_the_weather(monkeypatch):
@@ -710,7 +712,7 @@ def test_fixed_recordings_are_made_once(monkeypatch):
     a.wake_up()
     greetings = [t for t in made if t.startswith("Good ")]
     assert sorted(greetings) == ["Good afternoon, sir.", "Good evening, sir.", "Good morning, sir."]
-    assert made.count("It's 8 degrees, with a 70 percent chance of rain this " + "morning.") <= 2
+    assert sum(t.startswith("It's 8 degrees outside.") for t in made) == 2  # one per clap
 
 
 def test_old_briefing_section_in_config_is_ignored_quietly(tmp_path, capsys):
@@ -730,3 +732,29 @@ def test_silence_around_a_recording_is_trimmed():
     # about 0.02 s kept before the speech and 0.15 s after it
     assert abs(len(trimmed) - (len(speech) + 0.17 * second)) < 0.01 * second
     assert trim_silence(np.zeros(100, np.int16)).size == 100  # pure silence is left alone
+
+
+def test_suggestions_follow_the_temperature():
+    def tip(temp, rain=0, unit="°C"):
+        return WeatherReport("X", "fog", temp, 0, 0, 0, rain, 0, unit, "km/h").suggestion("evening")
+
+    assert tip(-2) == "It's freezing, so wrap up warm and mind the ice."
+    assert tip(0) == "It's freezing, so wrap up warm and mind the ice."
+    assert tip(5) == "A warm coat would be a good idea."
+    assert tip(12) == "A jacket should do."
+    assert tip(18) == "A light jumper should be plenty."
+    assert tip(25) == "It's warm, so dress lightly."
+    assert tip(33) == "It's hot, so drink plenty of water and stay in the shade."
+    assert tip(64, unit="°F") == "A light jumper should be plenty."  # 64 °F is about 18 °C
+
+
+def test_rain_suggestion_adds_the_right_clothing():
+    def tip(temp):
+        return WeatherReport("X", "rain", temp, 0, 0, 0, 80, 0, "°C", "km/h").suggestion("evening")
+
+    assert tip(3).endswith("so take an umbrella and a warm coat.")
+    assert tip(10).endswith("so take an umbrella and a jacket.")
+    assert tip(20).endswith("so take an umbrella.")
+    assert tip(20).startswith("There's an 80 percent chance of rain this evening")
+    rainy = WeatherReport("X", "rain", 20, 0, 0, 0, 70, 0, "°C", "km/h")
+    assert rainy.suggestion("morning").startswith("There's a 70 percent chance of rain this morning")
