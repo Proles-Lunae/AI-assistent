@@ -135,11 +135,6 @@ def test_standard_greeting():
     assert standard_greeting("evening", "Luca") == "Good evening, Luca."
 
 
-def test_weather_summary():
-    report = WeatherReport("London", "light rain", 11.2, 9.0, 13.0, 7.5, 80, 15.0, "°C", "km/h")
-    text = report.summary()
-    assert "light rain" in text and "80 percent" in text
-
 
 def test_pick_british_female_prefers_british_female():
     voices = [
@@ -157,7 +152,7 @@ def test_load_config_overrides(tmp_path):
     config = load_config(path)
     assert config.user.name == "Luca"
     assert config.clap.cooldown == 5.0
-    assert config.weather.city == "London"  # untouched default
+    assert config.weather.city == ""  # untouched default: detect location
 
 
 def test_weather_uses_certifi_certificates():
@@ -227,3 +222,58 @@ def test_speakers_are_not_picked_as_microphone():
 
     with pytest.raises(ValueError):
         pick("Realtek")
+
+
+def test_weather_summary_is_one_sentence():
+    report = WeatherReport("Berlin", "light rain", 11.2, 9.0, 13.0, 7.5, 80, 15.0, "°C", "km/h")
+    text = report.summary()
+    assert text.count(".") == 1 and text.endswith(".")
+    assert "Berlin" in text and "80 percent" in text
+
+
+def test_weather_numbers_are_rounded_for_claude():
+    report = WeatherReport("Berlin", "fog", 11.4, 9.6, 13.0, 7.5, 0, 15.2, "°C", "km/h")
+    data = report.as_dict()
+    assert (data["temperature"], data["feels_like"], data["low"]) == (11, 10, 8)
+
+
+def test_first_sentence_keeps_only_one():
+    from assistant.brain import first_sentence
+
+    assert first_sentence("Rainy, high of 13. Take an umbrella!") == "Rainy, high of 13."
+    assert first_sentence("Low of 7.5 degrees today.") == "Low of 7.5 degrees today."
+
+
+def test_detect_location_from_ipinfo(monkeypatch):
+    from assistant import weather
+
+    monkeypatch.setattr(weather, "_get_json", lambda url, params: {"loc": "52.52,13.40", "city": "Berlin"})
+    assert weather.detect_location() == (52.52, 13.40, "Berlin")
+
+
+def test_detect_location_falls_back_to_second_service(monkeypatch):
+    from assistant import weather
+
+    def fake(url, params):
+        if "ipinfo" in url:
+            raise ConnectionError("blocked")
+        return {"latitude": 48.14, "longitude": 11.58, "city": "Munich"}
+
+    monkeypatch.setattr(weather, "_get_json", fake)
+    assert weather.detect_location() == (48.14, 11.58, "Munich")
+
+
+def test_empty_city_uses_detected_location(monkeypatch):
+    from assistant import weather
+
+    calls = []
+    monkeypatch.setattr(weather, "detect_location", lambda: calls.append("auto") or (1.0, 2.0, "Here"))
+    monkeypatch.setattr(weather, "find_city", lambda c: calls.append(c) or (1.0, 2.0, c))
+    forecast = {
+        "current": {"temperature_2m": 5, "apparent_temperature": 3, "weather_code": 3, "wind_speed_10m": 9},
+        "daily": {"temperature_2m_max": [7], "temperature_2m_min": [1], "precipitation_probability_max": [20]},
+    }
+    monkeypatch.setattr(weather, "_get_json", lambda url, params: forecast)
+    assert weather.get_weather("").city == "Here"
+    assert weather.get_weather("Hamburg").city == "Hamburg"
+    assert calls == ["auto", "Hamburg"]

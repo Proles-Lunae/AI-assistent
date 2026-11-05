@@ -5,7 +5,7 @@
 name = ""                 # e.g. "Luca", so the assistant greets you by name
 
 [weather]
-city = "London"
+city = ""                 # "" = find your location automatically, or a city like "Berlin"
 units = "metric"          # "metric" (°C) or "imperial" (°F)
 
 [voice]

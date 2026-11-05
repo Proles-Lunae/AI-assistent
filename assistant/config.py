@@ -21,7 +21,7 @@ class UserSettings:
 
 @dataclass
 class WeatherSettings:
-    city: str = "London"
+    city: str = ""  # Empty = detect your location automatically.
     units: str = "metric"  # "metric" (°C, km/h) or "imperial" (°F, mph)
 
 

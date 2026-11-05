@@ -8,6 +8,7 @@ non-interactive mode, so it uses whatever account you're logged into with
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from datetime import datetime, timedelta
@@ -120,8 +121,13 @@ class ClaudeBrain:
             f"them again. It is {now:%A} {period}.\n"
             "Here is the weather as JSON:\n"
             f"{json.dumps(weather.as_dict())}\n"
-            f"Give a quick weather briefing for the {period}: what it's like, the high "
-            "and low, and the chance of rain, plus one practical tip (umbrella, coat, "
-            "sunglasses...). Two or three sentences."
+            f"Give the weather for the {period} in ONE short spoken sentence of at "
+            "most 25 words: the conditions, the high and low, and the chance of rain. "
+            "Nothing else."
         )
-        return self.ask(prompt)
+        return first_sentence(self.ask(prompt))
+
+
+def first_sentence(text: str) -> str:
+    """Keep only the first sentence, in case Claude wrote more."""
+    return re.split(r"(?<=[.!?])\s+", text.strip(), maxsplit=1)[0]

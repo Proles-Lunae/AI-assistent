@@ -47,7 +47,10 @@ You need **Python 3.11 or newer**, a microphone, speakers, and
 
 3. Make sure Claude Code is logged in. Run `claude` once and follow the login steps.
 
-4. Optional: copy `config.example.toml` to `config.toml` and set your name and city.
+4. Optional: copy `config.example.toml` to `config.toml` and set your name. The
+   weather is for your location, worked out automatically from your internet
+   connection (roughly your city; with a VPN on, the VPN's location). To use a
+   specific place instead, set `city` under `[weather]`, e.g. `city = "Berlin"`.
 
 ## Running it
 
@@ -88,7 +91,7 @@ speakers ◄── voice.py (British voice) ◄── brain.py (claude -p, your 
 | File | Job |
 | --- | --- |
 | `assistant/clap_detector.py` | Spots short, sharp sounds and checks the gap between two of them |
-| `assistant/weather.py` | Finds your city and fetches the current weather and today's forecast |
+| `assistant/weather.py` | Finds your location (or city) and fetches the weather and today's forecast |
 | `assistant/brain.py` | Time frames, standard greetings, and asking Claude for the weather briefing |
 | `assistant/voice.py` | Turns text into speech and plays it |
 | `assistant/main.py` | Ties everything together and handles the command options |

@@ -11,6 +11,8 @@ from dataclasses import asdict, dataclass
 
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+# Free services that estimate your location from your internet connection.
+LOCATION_URLS = ("https://ipinfo.io/json", "https://ipapi.co/json/")
 
 # WMO weather codes used by Open-Meteo.
 WEATHER_CODES = {
@@ -59,15 +61,18 @@ class WeatherReport:
     wind_unit: str
 
     def as_dict(self) -> dict:
-        return asdict(self)
+        data = asdict(self)
+        # Whole numbers read aloud better than "7 and a half degrees".
+        for key in ("temperature", "feels_like", "high", "low", "wind_speed"):
+            data[key] = round(data[key])
+        return data
 
     def summary(self) -> str:
-        """A plain spoken summary, used when Claude isn't available."""
+        """A one-sentence spoken summary, used when Claude isn't available."""
         return (
-            f"In {self.city} it's currently {self.description} and "
-            f"{round(self.temperature)} degrees, feeling like {round(self.feels_like)}. "
-            f"Today's high is {round(self.high)} and the low is {round(self.low)}, "
-            f"with a {self.rain_chance} percent chance of rain."
+            f"In {self.city} it's {self.description} and {round(self.temperature)} "
+            f"degrees, with a high of {round(self.high)}, a low of {round(self.low)} "
+            f"and a {self.rain_chance} percent chance of rain."
         )
 
 
@@ -111,8 +116,28 @@ def find_city(city: str) -> tuple[float, float, str]:
     return place["latitude"], place["longitude"], place["name"]
 
 
-def get_weather(city: str, units: str = "metric") -> WeatherReport:
-    lat, lon, name = find_city(city)
+def detect_location() -> tuple[float, float, str]:
+    """Estimate (latitude, longitude, city) from your internet connection.
+
+    Accurate to roughly your city. With a VPN on, it finds the VPN's location.
+    """
+    problems = []
+    for url in LOCATION_URLS:
+        try:
+            data = _get_json(url, {})
+            if "loc" in data:  # ipinfo.io: "52.52,13.40"
+                lat, lon = (float(x) for x in data["loc"].split(","))
+            else:  # ipapi.co
+                lat, lon = float(data["latitude"]), float(data["longitude"])
+            return lat, lon, data.get("city") or "your area"
+        except Exception as exc:
+            problems.append(f"{url}: {exc}")
+    raise ConnectionError("couldn't work out your location (" + "; ".join(problems) + ")")
+
+
+def get_weather(city: str = "", units: str = "metric") -> WeatherReport:
+    """Weather for ``city``, or for your detected location if ``city`` is empty."""
+    lat, lon, name = find_city(city) if city.strip() else detect_location()
     imperial = units == "imperial"
     params = {
         "latitude": lat,
