@@ -7,15 +7,18 @@ and tells you the temperature outside, with a useful tip:
 - **Wake word:** two claps, picked up by your microphone.
 - **Voice:** Microsoft's free "Sonia" neural voice (British English, female), via `edge-tts`.
 - **Weather:** [Open-Meteo](https://open-meteo.com/), which is free and needs no API key.
-- **Brain:** Claude, through your **Claude Code login** (`assistant/brain.py`).
-  The greeting doesn't need it, so it's currently unused and kept ready for future
-  features. It runs the `claude` command, so no API key is needed.
+- **Hearing you:** after the greeting she listens, and turns what you say into text
+  with [Whisper](https://github.com/SYSTRAN/faster-whisper), on your own PC.
+- **Brain:** Claude answers your questions, through your **Claude Code login**
+  (`assistant/brain.py`). It runs the `claude` command, so no API key is needed;
+  usage counts against your Claude plan.
 
 ## Setup
 
-You need **Python 3.11 or newer**, a microphone and speakers.
-[Claude Code](https://code.claude.com/docs), installed and logged in, is only
-needed for future features that use Claude.
+You need **Python 3.11 or newer**, a microphone, speakers, and
+[Claude Code](https://code.claude.com/docs) installed and logged in (for answering
+your questions). The first time she listens, the speech recognition downloads its
+model (about 140 MB).
 
 1. Get the code:
 
@@ -65,8 +68,27 @@ needed for future features that use Claude.
 | `python -m assistant --say "Hello there"` | Speak some text, to test the voice |
 | `python -m assistant --levels` | Show microphone loudness, to tune clap detection |
 | `python -m assistant --devices` | List the microphones |
+| `python -m assistant --talk` | Talk to her right away, without clapping |
 
 Press **Ctrl+C** to stop.
+
+## Talking to her
+
+After the greeting you hear a short **beep**: she's listening. Ask your question
+normally; she notices when you've stopped (about a second of quiet), and answers
+after a few seconds of thinking. Then she beeps again for a follow-up question,
+and remembers what you talked about. Say **"thanks"** or **"goodbye"**, or just
+stay quiet for 6 seconds, and she goes back to waiting for claps.
+
+Settings are under `[listen]` in `config.toml`:
+
+- If she doesn't notice you talking, lower `min_level` (e.g. to `0.003`).
+- If she cuts you off mid-sentence, raise `silence_seconds` (e.g. to `1.5`).
+- For better recognition, set `model = "small"` (slower); for speed, `"tiny"`.
+- To turn listening off, set `enabled = false`.
+
+She can't look things up on the internet, so she answers from Claude's own
+knowledge (plus today's date, time and your town).
 
 ## Tuning the clap detection
 
@@ -88,6 +110,8 @@ If you clap and nothing prints at all, it isn't hearing you:
 ```
 microphone.py ──► clap_detector.py ──two claps──┬─► greeting (recorded at start-up) ─┐
                                                 └─► weather.py: temperature right now ─┴─► voice.py ─► speakers
+                                                                                                    │ beep
+you ──► microphone.py ──► listening.py (Whisper: speech to text) ──► brain.py (Claude) ──► voice.py ◄┘
 ```
 
 | File | Job |
@@ -96,7 +120,8 @@ microphone.py ──► clap_detector.py ──two claps──┬─► greeting
 | `assistant/clap_detector.py` | Spots short, sharp sounds and checks the gap between two of them |
 | `assistant/timeframes.py` | The three time frames and their standard greetings, in one table |
 | `assistant/weather.py` | Finds your location (or city), gets the current temperature and the chance of rain |
-| `assistant/brain.py` | Talks to Claude (unused for now, kept for future features) |
+| `assistant/listening.py` | Records your question until you stop talking, and turns it into text (Whisper) |
+| `assistant/brain.py` | Asks Claude to answer your question, remembering the conversation |
 | `assistant/voice.py` | Turns text into speech and plays it |
 | `assistant/main.py` | Ties everything together and handles the command options |
 | `assistant/config.py` | Default settings, and loading `config.toml` |

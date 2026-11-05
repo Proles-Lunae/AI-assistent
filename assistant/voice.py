@@ -61,6 +61,20 @@ class Speaker:
                 print(f"(Couldn't play audio: {exc}. Trying the offline voice.)")
         self._say_offline(speech.text)
 
+    def beep(self) -> None:
+        """A short soft tone that means "I'm listening"."""
+        try:
+            import numpy as np
+            import sounddevice as sd
+
+            t = np.arange(int(0.15 * SAMPLE_RATE)) / SAMPLE_RATE
+            fade = np.minimum(1, np.minimum(t, t[-1] - t) / 0.02)  # no clicks
+            tone = (np.sin(2 * np.pi * 880 * t) * fade * 6000).astype(np.int16)
+            sd.play(tone, SAMPLE_RATE)
+            sd.wait()
+        except Exception:
+            pass  # no audio device: the "Listening..." message still shows
+
     def finish(self) -> None:
         """Wait until the current audio has finished playing."""
         try:

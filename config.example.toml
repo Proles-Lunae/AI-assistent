@@ -23,6 +23,16 @@ min_gap = 0.15            # seconds allowed between the two claps
 max_gap = 0.9
 cooldown = 3.0
 
+[listen]
+enabled = true            # after greeting you, listen for a question and answer it
+model = "base"            # speech recognition: "tiny" (fastest), "base", "small" (most accurate)
+language = "en"           # the language you speak; "" = detect it
+wait_seconds = 6.0        # how long she waits for you to start talking
+silence_seconds = 1.0     # this much quiet means you've finished
+max_seconds = 15.0        # longest question
+speech_ratio = 3.0        # how much louder than the room your voice must be...
+min_level = 0.006         # ...and how loud at least; lower it if she doesn't hear you
+
 [brain]
 command = "claude"        # the Claude Code command; uses your Claude login
 model = ""                # empty = Claude Code's default

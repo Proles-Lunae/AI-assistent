@@ -54,6 +54,22 @@ class ClapSettings:
 
 
 @dataclass
+class ListenSettings:
+    # After greeting you, listen for a question and answer it with Claude.
+    enabled: bool = True
+    # Whisper model: "tiny" (fastest), "base", "small" (more accurate, slower).
+    model: str = "base"
+    language: str = "en"  # the language you speak; "" = let Whisper work it out
+    wait_seconds: float = 6.0  # how long to wait for you to start talking
+    silence_seconds: float = 1.0  # this much quiet means you've finished
+    max_seconds: float = 15.0  # longest question
+    # Speech must be this many times louder than the room's background noise,
+    # and at least this loud (0-1). Lower min_level if she doesn't hear you.
+    speech_ratio: float = 3.0
+    min_level: float = 0.006
+
+
+@dataclass
 class BrainSettings:
     command: str = "claude"  # The Claude Code command (uses your Claude login).
     model: str = ""  # Empty = Claude Code's default model.
@@ -66,6 +82,7 @@ class Config:
     weather: WeatherSettings = field(default_factory=WeatherSettings)
     voice: VoiceSettings = field(default_factory=VoiceSettings)
     clap: ClapSettings = field(default_factory=ClapSettings)
+    listen: ListenSettings = field(default_factory=ListenSettings)
     brain: BrainSettings = field(default_factory=BrainSettings)
 
 

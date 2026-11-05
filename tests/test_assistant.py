@@ -486,7 +486,8 @@ def test_listening_to_the_microphone_wakes_on_a_double_clap(monkeypatch, capsys)
     class Stop(Exception):
         pass
 
-    def on_double_clap():
+    def on_double_clap(blocks):
+        assert hasattr(blocks, "get")  # she gets the microphone audio, to hear you too
         woken.set()
         raise Stop  # stop listening
 
@@ -657,6 +658,7 @@ def make_assistant(monkeypatch, weather_seconds=0.0, fail=False):
 
     monkeypatch.setattr(main, "get_weather", fake_weather)
     a = main.Assistant(Config())
+    a.transcriber.load = lambda: None  # no speech model in tests
     a.speaker.prepare = lambda text: SimpleNamespace(text=text, samples=None)
     played = []
     a.speaker.play = lambda speech, wait=True: played.append(speech.text)

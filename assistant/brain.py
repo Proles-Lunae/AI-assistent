@@ -4,9 +4,8 @@ Instead of an API key, this runs the ``claude`` command (Claude Code) in
 non-interactive mode, so it uses whatever account you're logged into with
 ``claude`` and its usage counts against that plan.
 
-The greeting and temperature no longer need Claude (the sentence is fixed,
-and asking Claude takes seconds), so nothing uses this at the moment; it's
-kept ready for future features.
+The greeting and temperature don't need Claude (the sentence is fixed, and
+asking Claude takes seconds); Claude answers the questions you ask her.
 """
 
 from __future__ import annotations
@@ -36,6 +35,8 @@ def first_sentence(text: str) -> str:
 
 
 class ClaudeBrain:
+    MAX_HISTORY = 6  # how many earlier questions and answers she remembers
+
     def __init__(self, settings: BrainSettings):
         self.s = settings
 
@@ -68,3 +69,19 @@ class ClaudeBrain:
             detail = (result.stderr or result.stdout).strip()[:300]
             raise BrainError(f"Claude didn't answer (exit {result.returncode}): {detail}")
         return reply
+
+    def answer(self, question: str, history: list[tuple[str, str]], context: str,
+               address: str = "sir") -> str:
+        """Answer a spoken question, remembering the conversation so far."""
+        lines = [f"Context: {context}"]
+        if history:
+            lines.append("The conversation so far:")
+            for asked, answered in history[-self.MAX_HISTORY:]:
+                lines += [f"User: {asked}", f"You: {answered}"]
+        lines += [
+            "The user just said this (turned into text from speech, so it may have "
+            f'small mistakes): "{question}"',
+            f"Answer in at most three short spoken sentences. You may call the user "
+            f"'{address}' now and then.",
+        ]
+        return self.ask("\n".join(lines))
