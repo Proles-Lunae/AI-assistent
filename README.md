@@ -63,16 +63,41 @@ model (about 480 MB).
 
 ## Running it
 
+**Desktop shortcut (recommended):** create it once with
+
+```bat
+python -m assistant --shortcut
+```
+
+Then double-click **Assistentin** on your desktop to start her, with no Command
+Prompt. She opens in her own window:
+
+- **The orb** shows what she's doing: teal and slowly breathing while she waits
+  for claps, bright cyan while she listens (it reacts to your voice), violet with
+  a turning ring while she thinks, gold while she speaks, and red if something's
+  wrong (the reason is shown underneath).
+- **The conversation** appears below it as chat bubbles, with the temperature and
+  your town at the top.
+- **Closing the window** hides her in the tray (the small icons next to the clock):
+  she keeps listening for claps. Click the tray icon to bring the window back;
+  right-click it and choose **Beenden** to quit.
+- Starting her a second time just brings the open window forward.
+- Messages for troubleshooting go to `assistant.log` in the project folder.
+
+**Other commands** (in the Command Prompt):
+
 | Command | What it does |
 | --- | --- |
-| `python -m assistant` | Listen for a double clap and greet you each time |
+| `python -m assistant` | Open her window (the same as the shortcut) |
+| `python -m assistant --console` | Run in the Command Prompt instead of her window |
 | `python -m assistant --now` | Greet you once right away, without clapping |
 | `python -m assistant --say "Hello there"` | Speak some text, to test the voice |
 | `python -m assistant --levels` | Show microphone loudness, to tune clap detection |
 | `python -m assistant --devices` | List the microphones |
 | `python -m assistant --talk` | Talk to her right away, without clapping |
+| `python -m assistant --shortcut` | Put the shortcut on the desktop |
 
-Press **Ctrl+C** to stop.
+In the Command Prompt, press **Ctrl+C** to stop.
 
 ## Language
 
@@ -142,6 +167,8 @@ you ──► microphone.py ──► listening.py (Whisper: speech to text) ─
 | `assistant/brain.py` | Asks Claude to answer your question, remembering the conversation |
 | `assistant/voice.py` | Turns text into speech and plays it |
 | `assistant/main.py` | Ties everything together and handles the command options |
+| `assistant/window.py` | Her window: the orb, the chat bubbles and the tray icon |
+| `assistant/shortcut.py` | Makes the desktop shortcut (`--shortcut`) |
 | `assistant/config.py` | Default settings, and loading `config.toml` |
 
 **Greetings and time frames:** the day has three time frames, each with its own

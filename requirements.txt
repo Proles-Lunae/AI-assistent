@@ -5,5 +5,7 @@ certifi
 miniaudio>=1.59
 # Speech recognition on your own PC (downloads its model the first time):
 faster-whisper>=1.0
+# Her window (orb, chat and tray icon):
+PySide6-Essentials>=6.5
 # Optional offline voice, used if the online voice can't be reached:
 pyttsx3>=2.90

@@ -48,6 +48,15 @@ class Phrases:
                         "er", "erm", "the", "a", "an", "to", "of", "with", "for", "in", "on",
                         "like", "is", "my", "your", "about", "than")
 
+    # The window: title, what the orb's caption says in each state, tray menu.
+    app_title = "Assistant"
+    status = {"starting": "Getting ready…", "waiting": "Clap twice to wake me",
+              "listening": "Listening…", "thinking": "Thinking…", "speaking": "Speaking…",
+              "problem": "Something's wrong – see below"}
+    show_window = "Show"
+    quit_app = "Quit"
+    tray_hint = "I'm still here, next to the clock. Clap twice whenever you need me."
+
     def greeting(self, period: str, address: str) -> str:
         return self.greetings[period] + (f", {address}" if address else "") + "."
 
@@ -89,6 +98,14 @@ class German(Phrases):
     claude_instruction = ("Answer in German, addressing the user politely with 'Sie'. "
                           "Write 'Grad' and 'Prozent' as words.")
     whisper_prompt = "Hallo. Wie spät ist es? Wie wird das Wetter heute?"
+    app_title = "Assistentin"
+    status = {"starting": "Wird gestartet…", "waiting": "Zweimal klatschen, um mich zu wecken",
+              "listening": "Ich höre zu…", "thinking": "Ich denke nach…",
+              "speaking": "Ich spreche…", "problem": "Etwas stimmt nicht – siehe unten"}
+    show_window = "Anzeigen"
+    quit_app = "Beenden"
+    tray_hint = ("Ich bin weiter da, unten neben der Uhr. Klatschen Sie zweimal, "
+                 "wenn Sie mich brauchen.")
     unfinished_words = ("und", "oder", "aber", "weil", "dass", "denn", "wenn", "ob", "also",
                         "äh", "ähm", "öh", "hm", "mit", "von", "zu", "für", "der", "die", "das",
                         "den", "dem", "des", "ein", "eine", "einen", "einem", "in", "im", "auf",

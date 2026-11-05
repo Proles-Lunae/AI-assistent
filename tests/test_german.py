@@ -136,7 +136,7 @@ def test_german_conversation_uses_german_texts(monkeypatch):
     a.speaker.beep = lambda: None
     said = iter(["Wie spät ist es?", "Danke."])
 
-    def fake_record(blocks, rate, settings):
+    def fake_record(blocks, rate, settings, **options):
         try:
             return np.array([next(said)], dtype=object)
         except StopIteration:

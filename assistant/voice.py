@@ -55,6 +55,7 @@ class Speaker:
         self.s = settings
         self.language = language
         self.voice = choose_voice(settings.voice, language, default_voice or "en-GB-SoniaNeural")
+        self.on_speak = lambda text: None  # told each sentence as she starts saying it
 
     def say(self, text: str) -> None:
         self.play(self.prepare(text))
@@ -71,6 +72,7 @@ class Speaker:
         """Speak ``speech``. With ``wait=False`` it returns while still talking
         (call ``finish()`` to wait), so the next sentence can be made meanwhile."""
         print(f"Assistant: {speech.text}")
+        self.on_speak(speech.text)
         if speech.samples is not None:
             try:
                 import sounddevice as sd

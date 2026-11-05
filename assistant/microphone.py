@@ -19,7 +19,8 @@ SILENCE_HELP = """
 """
 
 
-def listen(settings: ClapSettings, on_double_clap: Callable[[queue.Queue], None]) -> None:
+def listen(settings: ClapSettings, on_double_clap: Callable[[queue.Queue], None],
+           on_clap: Callable[[], None] | None = None) -> None:
     """Listen to the microphone forever, calling ``on_double_clap`` on each double clap.
 
     It's given the queue of microphone audio, so it can listen to you too.
@@ -36,6 +37,8 @@ def listen(settings: ClapSettings, on_double_clap: Callable[[queue.Queue], None]
                     print(SILENCE_HELP)
             if result == "single":
                 print(f"  clap heard (loudness {detector.last_peak:.2f}), clap once more...")
+                if on_clap is not None:
+                    on_clap()
             elif result == "double":
                 on_double_clap(blocks)
                 # Drop audio recorded while we were talking, including our own voice.

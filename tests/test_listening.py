@@ -128,7 +128,7 @@ def make_talker(monkeypatch, said, answers=None, brain_fails=False, **listen):
     turns = iter(said)
     heard = []
 
-    def fake_record(blocks, rate, settings):
+    def fake_record(blocks, rate, settings, **options):
         from assistant.listening import MicrophoneStopped
 
         text = next(turns, "<end>")
@@ -341,7 +341,7 @@ def make_hearer(monkeypatch, pieces, transcripts):
     calls = []
     more = iter(pieces)
 
-    def fake_record(blocks, rate, settings, wait_seconds=None, noise=None):
+    def fake_record(blocks, rate, settings, wait_seconds=None, noise=None, on_level=None):
         calls.append(wait_seconds)
         return next(more, None)
 

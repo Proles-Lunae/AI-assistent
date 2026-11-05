@@ -24,14 +24,33 @@ MAX_CONTINUATIONS = 3  # how many times she waits for the rest of an unfinished 
 
 
 class Assistant:
-    def __init__(self, config: Config):
+    """She waits for claps, greets you, and talks with you.
+
+    ``events(kind, **data)`` is told what's happening, for the window:
+    "state" (state = starting, waiting, listening, thinking or speaking),
+    "said" (text she says), "heard" (text you said), "weather" (temperature,
+    unit, city), "level" (microphone loudness), "clap", "note" (text).
+    """
+
+    def __init__(self, config: Config, events=None):
         self.config = config
+        self.events = events or (lambda kind, **data: None)
         self.words = phrases_for(config.user.language)  # everything she says, in her language
         self.speaker = Speaker(config.voice, self.words.code, self.words.voice)
+        self.speaker.on_speak = self._speaking
         self._ready: dict[str, Speech] = {}  # greetings and the no-weather line, by text
         self._pool = ThreadPoolExecutor(max_workers=2)
         self.brain = ClaudeBrain(config.brain)
         self.transcriber = Transcriber(config.listen, self.words.code, self.words.whisper_prompt)
+
+    def _speaking(self, text: str) -> None:
+        self.events("state", state="speaking")
+        self.events("said", text=text)
+
+    def note(self, text: str) -> None:
+        """A message worth showing: printed, and shown in the window."""
+        print(f"({text})")
+        self.events("note", text=text)
 
     def recording(self, text: str) -> Speech:
         """The recording of a fixed sentence, made once and then reused."""
@@ -46,8 +65,10 @@ class Assistant:
         try:
             weather = get_weather(settings.city, settings.units, start, frame_end(start))
         except Exception as exc:
-            print(f"(Couldn't get the weather: {exc})")
+            self.note(f"Couldn't get the weather: {exc}")
             return self.recording(self.words.no_weather)
+        self.events("weather", temperature=round(weather.temperature),
+                    unit=weather.temperature_unit, city=weather.city)
         return self.speaker.prepare(weather.spoken(time_of_day(now), self.words.code))
 
     def wake_up(self) -> None:
@@ -74,11 +95,12 @@ class Assistant:
         while True:
             if ready_beep:
                 self.speaker.beep()
+                self.events("state", state="listening")
                 drain(blocks)  # forget what the microphone heard while she was talking
                 print('Listening to you... (say "stop" or "goodbye" when you\'re done)')
                 ready_beep, quiet_for = False, 0.0
             try:
-                audio = record_question(blocks, rate, settings)
+                audio = record_question(blocks, rate, settings, on_level=self._level)
             except MicrophoneStopped as exc:
                 print(f"(Stopped listening: {exc})")
                 return
@@ -88,6 +110,7 @@ class Assistant:
                     print("(Quiet for a while; back to waiting for claps.)")
                     return
                 continue
+            self.events("state", state="thinking")
             try:
                 question = self.hear_out(blocks, audio)
             except MicrophoneStopped as exc:
@@ -101,6 +124,7 @@ class Assistant:
                 self.speaker.play(self.recording(self.words.didnt_catch))
                 continue
             print(f"You: {question}")
+            self.events("heard", text=question)
             if is_goodbye(question):
                 self.speaker.play(self.recording(self.words.goodbye))
                 return
@@ -110,7 +134,7 @@ class Assistant:
                                            self.config.user.address(),
                                            self.words.claude_instruction)
             except BrainError as exc:
-                print(f"(Claude couldn't answer: {exc})")
+                self.note(f"Claude couldn't answer: {exc}")
                 self.speaker.play(self.recording(self.words.no_brain))
                 continue  # she can still be asked again, or told to stop
             history.append((question, answer))
@@ -127,13 +151,19 @@ class Assistant:
             if not sounds_unfinished(question, self.words.unfinished_words):
                 break
             print(f"(Heard so far: {question!r}; waiting in case you go on...)")
+            self.events("state", state="listening")
             more = record_question(blocks, rate, settings, wait_seconds=settings.extra_wait_seconds,
-                                   noise=settings.min_level / settings.speech_ratio)
+                                   noise=settings.min_level / settings.speech_ratio,
+                                   on_level=self._level)
             if more is None:
                 break  # you were finished after all
             audio = np.concatenate([audio, more])
+            self.events("state", state="thinking")
             question = self.transcriber.transcribe(audio, rate)
         return question
+
+    def _level(self, level: float) -> None:
+        self.events("level", level=level)
 
     def context(self) -> str:
         """What Claude should know: the date and time, and where you are."""
@@ -158,13 +188,14 @@ class Assistant:
             city = self.config.weather.city.strip()
             find_city(city) if city else detect_location()
         except Exception as exc:
-            print(f"(Couldn't find your location yet: {exc})")
+            self.note(f"Couldn't find your location yet: {exc}")
         if self.config.listen.enabled:
             try:
                 self.transcriber.load()
             except Exception as exc:
-                print(f"(Speech recognition isn't available: {exc}. "
-                      "Install it with: pip install faster-whisper)")
+                self.note(f"Speech recognition isn't available: {exc}. "
+                          "Install it with: pip install faster-whisper")
+        self.events("ready")
 
     def talk(self) -> None:
         """Start a conversation straight away, without clapping (for --talk)."""
@@ -186,10 +217,12 @@ class Assistant:
             self.wake_up()
             if self.config.listen.enabled:
                 self.converse(blocks)
+            self.events("state", state="waiting")
             print("\nListening for a double clap again...")
 
         print("Listening for a double clap... (press Ctrl+C to quit)")
-        listen(self.config.clap, on_double_clap)
+        self.events("state", state="waiting")
+        listen(self.config.clap, on_double_clap, on_clap=lambda: self.events("clap"))
 
 
 def is_goodbye(text: str) -> bool:
@@ -198,6 +231,42 @@ def is_goodbye(text: str) -> bool:
     short = " ".join(words)
     return len(words) <= 5 and any(
         f" {phrase} " in f" {short} " for phrase in all_goodbye_words())
+
+
+def open_window(config: Config) -> bool:
+    """Open her window; False if the window toolkit (PySide6) isn't installed."""
+    try:
+        from .window import run_window
+    except ImportError as exc:
+        print(f"(Her window isn't available ({exc}); running here instead. "
+              "Install it with: pip install -r requirements.txt)")
+        return False
+    run_window(config)
+    return True
+
+
+def show_error(message: str) -> None:
+    """A message box, for when there's no console to print to."""
+    try:
+        from PySide6.QtWidgets import QApplication, QMessageBox
+
+        app = QApplication.instance() or QApplication([])
+        QMessageBox.warning(None, "Assistentin", message)
+        del app
+    except Exception:
+        pass
+
+
+def make_shortcut(config: Config) -> None:
+    from .shortcut import create_desktop_shortcut
+
+    try:
+        path = create_desktop_shortcut(phrases_for(config.user.language).app_title)
+    except Exception as exc:
+        print(f"Couldn't create the shortcut: {exc}")
+        return
+    print(f"Shortcut created: {path}")
+    print("Double-click it to start her, no Command Prompt needed.")
 
 
 def main() -> None:
@@ -211,11 +280,22 @@ def main() -> None:
     parser.add_argument("--say", metavar="TEXT", help="just speak TEXT (to test the voice)")
     parser.add_argument("--talk", action="store_true",
                         help="talk to her right away, without clapping")
+    parser.add_argument("--console", action="store_true",
+                        help="run in this console window instead of her own window")
+    parser.add_argument("--shortcut", action="store_true",
+                        help="put a shortcut on the desktop that opens her window")
     args = parser.parse_args()
 
+    console_only = any((args.console, args.now, args.levels, args.devices, args.say, args.talk,
+                        args.shortcut))
     try:
         config = load_config(args.config, report=True)
         print(f'She will call you: "{config.user.address()}"')
+        if args.shortcut:
+            make_shortcut(config)
+            return
+        if not console_only and open_window(config):
+            return
         assistant = Assistant(config)
         if args.devices:
             list_devices()
@@ -231,6 +311,8 @@ def main() -> None:
             assistant.run()
     except ConfigError as exc:  # a mistake in config.toml: explain it, no traceback
         print(exc)
+        if not console_only:
+            show_error(str(exc))
     except KeyboardInterrupt:
         print("\nGoodbye!")
 

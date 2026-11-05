@@ -6,3 +6,7 @@ venv/
 config.toml
 # Temporary copies made by Claude Code workflows
 .claude/worktrees/
+
+# Made on your PC by the program
+assistant.log
+assistant.ico
