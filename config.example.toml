@@ -27,6 +27,3 @@ cooldown = 3.0
 command = "claude"        # the Claude Code command; uses your Claude login
 model = ""                # empty = Claude Code's default
 timeout = 60
-
-[briefing]
-prepare_ahead = true      # make the weather briefing once per time frame, ahead of time

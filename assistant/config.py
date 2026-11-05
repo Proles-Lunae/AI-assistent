@@ -61,20 +61,15 @@ class BrainSettings:
 
 
 @dataclass
-class BriefingSettings:
-    # Prepare greeting + weather in the background, once per time frame,
-    # so it plays the moment you clap.
-    prepare_ahead: bool = True
-
-
-@dataclass
 class Config:
     user: UserSettings = field(default_factory=UserSettings)
     weather: WeatherSettings = field(default_factory=WeatherSettings)
     voice: VoiceSettings = field(default_factory=VoiceSettings)
     clap: ClapSettings = field(default_factory=ClapSettings)
     brain: BrainSettings = field(default_factory=BrainSettings)
-    briefing: BriefingSettings = field(default_factory=BriefingSettings)
+
+
+OBSOLETE_SECTIONS = {"briefing"}  # [briefing] prepare_ahead: greetings are always ready now
 
 
 class ConfigError(ValueError):
@@ -111,6 +106,8 @@ def load_config(path: Path | None = None, report: bool = False) -> Config:
         ) from exc
     # Unknown names only get a warning, so old config files keep working.
     for section_name, values in data.items():
+        if section_name.lower() in OBSOLETE_SECTIONS:
+            continue  # settings that no longer exist; older config files still have them
         section = getattr(config, section_name.lower(), None)
         if section is None or not isinstance(values, dict):
             print(f"(Ignoring unknown section [{section_name}] in config.toml)")

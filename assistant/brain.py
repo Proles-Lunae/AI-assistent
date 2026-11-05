@@ -3,19 +3,19 @@
 Instead of an API key, this runs the ``claude`` command (Claude Code) in
 non-interactive mode, so it uses whatever account you're logged into with
 ``claude`` and its usage counts against that plan.
+
+The greeting and temperature no longer need Claude (the sentence is fixed,
+and asking Claude takes seconds), so nothing uses this at the moment; it's
+kept ready for future features.
 """
 
 from __future__ import annotations
 
-import json
 import re
 import shutil
 import subprocess
-from datetime import datetime
 
 from .config import BrainSettings
-from .timeframes import GREETINGS, frame_end, time_of_day
-from .weather import WeatherReport
 
 PERSONA = (
     "You are a warm, witty British voice assistant, a bit like a friendly butler. "
@@ -68,20 +68,3 @@ class ClaudeBrain:
             detail = (result.stderr or result.stdout).strip()[:300]
             raise BrainError(f"Claude didn't answer (exit {result.returncode}): {detail}")
         return reply
-
-    def weather_briefing(self, weather: WeatherReport, start: datetime) -> str:
-        """Ask Claude for a one-sentence forecast for the time frame at ``start``."""
-        period = time_of_day(start)
-        facts = weather.spoken_facts()
-        rain = ("and the chance of rain" if "rain_chance_percent" in facts
-                else "and do not mention any chance of rain")
-        prompt = (
-            f"You have just greeted the user with '{GREETINGS[period]}'. Do not greet "
-            f"them again. This is for {start:%A} {period}.\n"
-            "Here is the weather as JSON; temperature is the latest measured one, "
-            f"conditions are for the {period} ({start:%H:%M} to {frame_end(start):%H:%M}):\n"
-            f"{json.dumps(facts)}\n"
-            f"Give the weather in ONE short spoken sentence of at most 20 words: the "
-            f"conditions, the temperature {rain}. No high or low. Nothing else."
-        )
-        return first_sentence(self.ask(prompt))

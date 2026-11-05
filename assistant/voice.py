@@ -45,18 +45,30 @@ class Speaker:
             print(f"(Online voice failed: {exc}. Will use the offline voice.)")
             return Speech(text)
 
-    def play(self, speech: Speech) -> None:
+    def play(self, speech: Speech, wait: bool = True) -> None:
+        """Speak ``speech``. With ``wait=False`` it returns while still talking
+        (call ``finish()`` to wait), so the next sentence can be made meanwhile."""
         print(f"Assistant: {speech.text}")
         if speech.samples is not None:
             try:
                 import sounddevice as sd
 
                 sd.play(speech.samples, SAMPLE_RATE)
-                sd.wait()
+                if wait:
+                    sd.wait()
                 return
             except Exception as exc:  # no audio device...
                 print(f"(Couldn't play audio: {exc}. Trying the offline voice.)")
         self._say_offline(speech.text)
+
+    def finish(self) -> None:
+        """Wait until the current audio has finished playing."""
+        try:
+            import sounddevice as sd
+
+            sd.wait()
+        except Exception:
+            pass
 
     def _render(self, text: str):
         """Make the neural-voice audio (MP3) and decode it, ready for the speakers."""
@@ -77,7 +89,7 @@ class Speaker:
         decoded = miniaudio.decode(
             mp3, output_format=miniaudio.SampleFormat.SIGNED16, nchannels=1, sample_rate=SAMPLE_RATE
         )
-        return np.frombuffer(decoded.samples, dtype=np.int16)
+        return trim_silence(np.frombuffer(decoded.samples, dtype=np.int16))
 
     def _say_offline(self, text: str) -> None:
         try:
@@ -91,6 +103,20 @@ class Speaker:
             engine.setProperty("voice", voice.id)
         engine.say(text)
         engine.runAndWait()
+
+
+def trim_silence(samples, lead: float = 0.02, tail: float = 0.15, level: int = 300):
+    """Cut the silence the voice service adds around speech, keeping a short
+    natural pause at the end, so two recordings played back to back sound
+    like one sentence."""
+    import numpy as np
+
+    loud = np.flatnonzero(np.abs(samples) > level)
+    if not len(loud):
+        return samples
+    start = max(0, loud[0] - int(lead * SAMPLE_RATE))
+    end = min(len(samples), loud[-1] + int(tail * SAMPLE_RATE))
+    return samples[start:end]
 
 
 def pick_british_female(voices):

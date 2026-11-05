@@ -1,18 +1,20 @@
 # Clap-activated voice assistant
 
 Clap twice and the assistant wakes up. It greets you in a British female voice
-and tells you today's weather.
+and tells you the temperature outside: "Good evening, sir. It's 8 degrees."
 
 - **Wake word:** two claps, picked up by your microphone.
 - **Voice:** Microsoft's free "Sonia" neural voice (British English, female), via `edge-tts`.
 - **Weather:** [Open-Meteo](https://open-meteo.com/), which is free and needs no API key.
-- **Brain:** Claude, through your **Claude Code login**. The assistant runs the
-  `claude` command, so no API key is needed. Usage counts against your Claude plan.
+- **Brain:** Claude, through your **Claude Code login** (`assistant/brain.py`).
+  The greeting doesn't need it, so it's currently unused and kept ready for future
+  features. It runs the `claude` command, so no API key is needed.
 
 ## Setup
 
-You need **Python 3.11 or newer**, a microphone, speakers, and
-[Claude Code](https://code.claude.com/docs) installed and logged in.
+You need **Python 3.11 or newer**, a microphone and speakers.
+[Claude Code](https://code.claude.com/docs), installed and logged in, is only
+needed for future features that use Claude.
 
 1. Get the code:
 
@@ -83,10 +85,8 @@ If you clap and nothing prints at all, it isn't hearing you:
 ## How it works
 
 ```
-microphone.py ──► clap_detector.py ──two claps──► weather.py (Open-Meteo)
-                                                       │
-                                                       ▼
-speakers ◄── voice.py (British voice) ◄───── brain.py (claude -p, your login)
+microphone.py ──► clap_detector.py ──two claps──┬─► greeting (recorded at start-up) ─┐
+                                                └─► weather.py: temperature right now ─┴─► voice.py ─► speakers
 ```
 
 | File | Job |
@@ -94,9 +94,8 @@ speakers ◄── voice.py (British voice) ◄───── brain.py (claude 
 | `assistant/microphone.py` | Chooses the microphone, records from it, and runs `--levels` and `--devices` |
 | `assistant/clap_detector.py` | Spots short, sharp sounds and checks the gap between two of them |
 | `assistant/timeframes.py` | The three time frames and their standard greetings, in one table |
-| `assistant/weather.py` | Finds your location (or city) and fetches the hourly forecast for a time frame |
-| `assistant/brain.py` | Asks Claude for the weather briefing |
-| `assistant/briefing.py` | Prepares each time frame's greeting and forecast ahead of time |
+| `assistant/weather.py` | Finds your location (or city), gets the current temperature and the chance of rain |
+| `assistant/brain.py` | Talks to Claude (unused for now, kept for future features) |
 | `assistant/voice.py` | Turns text into speech and plays it |
 | `assistant/main.py` | Ties everything together and handles the command options |
 | `assistant/config.py` | Default settings, and loading `config.toml` |
@@ -110,24 +109,20 @@ standard greeting:
 | 11am – 6pm | Good afternoon |
 | 6pm – 3am | Good evening |
 
-For each time frame, the greeting and a one-sentence forecast (the conditions, the
-latest measured temperature, and the chance of rain only when it's over 20%) for that frame's
-hours (for example 6pm–3am for the evening) are made together as **one
-recording**, in the background (`assistant/briefing.py`). When you clap, it plays
-straight away, with no pause between the greeting and the forecast. Every clap in
-the same frame replays it. The next frame's recording is made 30 minutes before
-that frame starts, so there's no wait when it changes. That's three Claude
-requests a day.
+**What she says:** the greeting, then the temperature, checked fresh at every
+clap. The chance of rain is added only when it's over 20% for the rest of the
+time frame: "Good evening, sir. It's 8 degrees, with a 70 percent chance of rain
+this evening."
 
-If you clap before Claude's version is ready (right after starting, or after
-the PC wakes from sleep), she still says greeting and weather in one message,
-using a built-in forecast sentence that takes only a second or two to make.
-Claude's version is used from the next clap on. Set `prepare_ahead = false` under `[briefing]` to ask Claude on
-every clap instead.
+**Why there's no wait:** the three greetings are recorded when the program starts.
+When you clap, the greeting plays straight away, and while she says it (about a
+second and a half) the temperature is checked and the rest of the sentence is
+recorded. It follows right after the greeting, with the silence between the two
+recordings trimmed so they sound like one sentence. Your location is looked up at
+start-up and remembered for 3 hours.
 
-If Claude can't be reached, the assistant still gives you a simple built-in
-weather report. If the online voice can't be reached, it falls back to your computer's
-own voices (`pyttsx3`).
+If the weather can't be reached, she says so after the greeting. If the online
+voice can't be reached, it falls back to your computer's own voices (`pyttsx3`).
 
 ## Tests
 

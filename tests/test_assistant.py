@@ -225,51 +225,14 @@ def test_speakers_are_not_picked_as_microphone():
         pick("Realtek")
 
 
-def test_weather_summary_is_one_sentence():
-    report = WeatherReport("Berlin", "light rain", 11.2, 9.0, 13.0, 7.5, 80, 15.0, "°C", "km/h")
-    text = report.summary()
-    assert text.count(".") == 1 and text.endswith(".")
-    assert "Berlin" in text and "80 percent" in text
-
-
-def test_claude_gets_latest_temperature_and_no_high_or_low():
-    report = WeatherReport("Berlin", "fog", 11.4, 9.6, 13.0, 7.5, 0, 15.2, "°C", "km/h")
-    assert report.spoken_facts() == {
-        "city": "Berlin", "conditions": "fog", "temperature": 11, "unit": "°C"}
-
-
 def test_rain_chance_only_mentioned_above_20_percent():
     def report(rain):
         return WeatherReport("Berlin", "overcast", 8, 6, 10, 5, rain, 18, "°C", "km/h")
 
     for rain in (0, 15, 20):
-        assert "rain_chance_percent" not in report(rain).spoken_facts()
-        assert "percent" not in report(rain).summary("evening")
-    assert report(21).spoken_facts()["rain_chance_percent"] == 21
-    assert "21 percent chance of rain this evening" in report(21).summary("evening")
-
-
-def test_simple_forecast_wording():
-    r = WeatherReport("Berlin", "light rain", 8.4, 6, 10.2, 4.6, 70, 18, "°C", "km/h")
-    assert r.summary("evening") == (
-        "In Berlin it's 8 degrees and light rain, with a 70 percent chance of rain this evening.")
-    assert "high" not in r.summary() and "low" not in r.summary()
-
-
-def test_prompt_tells_claude_to_skip_unlikely_rain(monkeypatch):
-    from assistant.brain import ClaudeBrain
-    from assistant.config import BrainSettings
-
-    prompts = []
-    brain = ClaudeBrain(BrainSettings())
-    monkeypatch.setattr(brain, "ask", lambda prompt: prompts.append(prompt) or "Fine.")
-    dry = WeatherReport("Berlin", "clear sky", 8, 6, 10, 5, 10, 18, "°C", "km/h")
-    wet = WeatherReport("Berlin", "rain", 8, 6, 10, 5, 80, 18, "°C", "km/h")
-    brain.weather_briefing(dry, datetime(2026, 1, 2, 18))
-    brain.weather_briefing(wet, datetime(2026, 1, 2, 18))
-    assert "do not mention any chance of rain" in prompts[0] and "rain_chance" not in prompts[0]
-    assert '"rain_chance_percent": 80' in prompts[1]
-    assert all("No high or low" in p for p in prompts)
+        assert report(rain).spoken("evening") == "It's 8 degrees."
+    assert report(21).spoken("evening") == (
+        "It's 8 degrees, with a 21 percent chance of rain this evening.")
 
 
 def test_first_sentence_keeps_only_one():
@@ -399,57 +362,6 @@ def test_location_is_remembered(monkeypatch):
     assert len(lookups) == 1
 
 
-def make_assistant(monkeypatch, claude_seconds=0.0):
-    """An Assistant with fake weather, Claude and voice; records what it plays."""
-    import time as _time
-
-    from assistant import main
-    from assistant.config import Config
-
-    report = WeatherReport("Berlin", "light rain", 8, 6, 10, 5, 70, 18, "°C", "km/h")
-    monkeypatch.setattr(main, "get_weather", lambda *a: report)
-    a = main.Assistant(Config())
-
-    def slow_claude(weather, start):
-        _time.sleep(claude_seconds)
-        return "Claude's forecast."
-
-    a.brain.weather_briefing = slow_claude
-    a.speaker.prepare = lambda text: SimpleNamespace(text=text)
-    played = []
-    a.speaker.play = lambda speech: played.append(speech.text)
-    return a, played
-
-
-def test_clap_before_claude_is_ready_still_gives_one_message(monkeypatch):
-    from assistant.briefing import BriefingCache
-
-    a, played = make_assistant(monkeypatch, claude_seconds=1.0)
-    a.cache = BriefingCache(a.build_briefing)
-    a.cache.start()
-    try:
-        a.wake_up()  # straight after starting: Claude still busy
-        assert len(played) == 1
-        assert played[0].startswith("Good ") and ", sir." in played[0]
-        assert "light rain" in played[0]  # the quick forecast, in the same message
-    finally:
-        a.cache.stop()
-
-
-def test_clap_after_claude_is_ready_plays_claudes_version(monkeypatch):
-    from assistant.briefing import BriefingCache
-
-    a, played = make_assistant(monkeypatch)
-    a.cache = BriefingCache(a.build_briefing)
-    a.cache.start()
-    try:
-        a.cache.take(timeout=2)
-        a.wake_up()
-        assert played == [played[0]] and played[0].endswith("sir. Claude's forecast.")
-    finally:
-        a.cache.stop()
-
-
 def test_frame_end():
     assert frame_end(datetime(2026, 1, 2, 3)) == datetime(2026, 1, 2, 11)
     assert frame_end(datetime(2026, 1, 2, 11)) == datetime(2026, 1, 2, 18)
@@ -481,42 +393,12 @@ def test_claude_gets_the_prompt_through_stdin_with_the_full_path(monkeypatch):
 
     monkeypatch.setattr(brain.shutil, "which", lambda c: r"C:\Users\me\claude.cmd")
     monkeypatch.setattr(brain.subprocess, "run", fake_run)
-    report = WeatherReport("Berlin", "light rain", 8, 6, 10, 5, 70, 18, "°C", "km/h")
     claude = brain.ClaudeBrain(BrainSettings(model="sonnet"))
-    assert claude.weather_briefing(report, datetime(2026, 1, 2, 18)) == "Rainy, high of 13."
+    assert claude.ask("Line one.\nLine two.") == "Rainy, high of 13. Umbrella!"
     cmd, kwargs = calls[0]
     assert cmd[:2] == [r"C:\Users\me\claude.cmd", "-p"] and cmd[-2:] == ["--model", "sonnet"]
-    assert "Good evening" in kwargs["input"] and "18:00 to 03:00" in kwargs["input"]
+    assert kwargs["input"] == "Line one.\nLine two."  # multi-line prompt arrives whole
     assert kwargs["input"] not in cmd  # the prompt is not a command-line argument
-
-
-def test_briefing_fallbacks(monkeypatch):
-    from assistant.brain import BrainError
-    from assistant.main import NO_WEATHER
-
-    a, _ = make_assistant(monkeypatch)
-    evening = datetime(2026, 1, 2, 18)
-    full = a.build_briefing(evening)
-    assert full.complete and full.speech.text == "Good evening, sir. Claude's forecast."
-    quick = a.build_briefing(evening, quick=True)
-    assert not quick.complete and "light rain" in quick.speech.text
-
-    def no_claude(weather, start):
-        raise BrainError("offline")
-
-    a.brain.weather_briefing = no_claude
-    simple = a.build_briefing(evening)
-    assert simple.complete and "8 degrees and light rain" in simple.speech.text
-
-    def no_weather(*args):
-        raise ConnectionError("offline")
-
-    from assistant import main
-
-    monkeypatch.setattr(main, "get_weather", no_weather)
-    for briefing in (a.build_briefing(evening), a.build_briefing(evening, quick=True)):
-        assert not briefing.complete
-        assert briefing.speech.text == f"Good evening, sir. {NO_WEATHER}"
 
 
 def test_config_values_get_the_expected_types(tmp_path, capsys):
@@ -708,15 +590,14 @@ def test_stand_in_claude_gets_the_prompt_through_stdin(tmp_path, monkeypatch):
     from assistant.config import BrainSettings
 
     script, call = stand_in_claude(tmp_path, monkeypatch)
-    report = WeatherReport("Berlin", "fog", 6, 4, 8, 3, 10, 5, "°C", "km/h")
-    answer = ClaudeBrain(BrainSettings()).weather_briefing(report, datetime(2026, 1, 2, 18))
-    assert answer == "Mild and dry this evening."
+    answer = ClaudeBrain(BrainSettings()).ask("Say hello.\nBriefly.")
+    assert answer == "Mild and dry this evening. Enjoy it!"
     argv, prompt = call()["argv"], call()["stdin"]
     assert argv[0] == str(script)  # the full path, as found by shutil.which
     assert argv[argv.index("--tools") + 1] == ""  # no tools: it only has to talk
     assert "--bare" not in argv and "--model" not in argv  # Claude login, default model
     assert "--strict-mcp-config" in argv and "--disable-slash-commands" in argv
-    assert "Good evening" in prompt and '"city": "Berlin"' in prompt and "18:00 to 03:00" in prompt
+    assert prompt == "Say hello.\nBriefly."
     assert prompt not in argv  # the prompt is not a command-line argument
 
 
@@ -743,3 +624,109 @@ def test_latest_measured_temperature_is_used(monkeypatch):
     assert weather.get_weather("").temperature == 7.6
     del forecast["current"]  # older/odd reply: fall back to the hourly value
     assert weather.get_weather("").temperature == 5
+
+
+def test_spoken_temperature_wording():
+    def at(temp):
+        return WeatherReport("Berlin", "fog", temp, 0, 0, 0, 0, 0, "°C", "km/h").spoken("morning")
+
+    assert at(8.4) == "It's 8 degrees."
+    assert at(1.2) == "It's 1 degree."
+    assert at(-0.4) == "It's 0 degrees."
+    assert at(-3.2) == "It's minus 3 degrees."
+    assert "Berlin" not in at(8) and "fog" not in at(8)  # no city, no conditions
+
+
+def make_assistant(monkeypatch, weather_seconds=0.0, fail=False):
+    """An Assistant with fake weather and voice; records what it plays, in order."""
+    import time as _time
+
+    from assistant import main
+    from assistant.config import Config
+
+    report = WeatherReport("Berlin", "light rain", 8.4, 6, 10, 5, 70, 18, "°C", "km/h")
+    fetches = []
+
+    def fake_weather(*args):
+        fetches.append(args)
+        _time.sleep(weather_seconds)
+        if fail:
+            raise ConnectionError("offline")
+        return report
+
+    monkeypatch.setattr(main, "get_weather", fake_weather)
+    a = main.Assistant(Config())
+    a.speaker.prepare = lambda text: SimpleNamespace(text=text, samples=None)
+    played = []
+    a.speaker.play = lambda speech, wait=True: played.append(speech.text)
+    a.speaker.finish = lambda: played.append("<greeting finished>")
+    return a, played, fetches
+
+
+def test_clap_greets_then_gives_the_fresh_temperature(monkeypatch):
+    a, played, _ = make_assistant(monkeypatch, weather_seconds=0.2)
+    a.wake_up()
+    greeting, finished, weather = played
+    assert greeting.startswith("Good ") and greeting.endswith(", sir.")
+    assert finished == "<greeting finished>"  # the weather follows only after the greeting
+    assert weather == f"It's 8 degrees, with a 70 percent chance of rain this {greeting[5:-6]}."
+
+
+def test_greeting_does_not_wait_for_the_weather(monkeypatch):
+    import time as _time
+
+    a, played, _ = make_assistant(monkeypatch, weather_seconds=0.5)
+    first_sound = []
+    a.speaker.play = lambda speech, wait=True: (first_sound.append(_time.monotonic()),
+                                                 played.append(speech.text))
+    start = _time.monotonic()
+    a.wake_up()
+    assert first_sound[0] - start < 0.1  # the greeting started at once
+    assert first_sound[1] - start >= 0.5  # the weather came when it was ready
+
+
+def test_temperature_is_checked_fresh_at_every_clap(monkeypatch):
+    a, _, fetches = make_assistant(monkeypatch)
+    a.wake_up()
+    a.wake_up()
+    assert len(fetches) == 2
+
+
+def test_weather_failure_still_gives_one_greeting_and_an_apology(monkeypatch):
+    from assistant.main import NO_WEATHER
+
+    a, played, _ = make_assistant(monkeypatch, fail=True)
+    a.wake_up()
+    assert played[1:] == ["<greeting finished>", NO_WEATHER]
+
+
+def test_fixed_recordings_are_made_once(monkeypatch):
+    a, _, _ = make_assistant(monkeypatch)
+    made = []
+    a.speaker.prepare = lambda text: made.append(text) or SimpleNamespace(text=text)
+    monkeypatch.setattr("assistant.main.detect_location", lambda: (1, 2, "Here"))
+    a.warm_up()
+    a.wake_up()
+    a.wake_up()
+    greetings = [t for t in made if t.startswith("Good ")]
+    assert sorted(greetings) == ["Good afternoon, sir.", "Good evening, sir.", "Good morning, sir."]
+    assert made.count("It's 8 degrees, with a 70 percent chance of rain this " + "morning.") <= 2
+
+
+def test_old_briefing_section_in_config_is_ignored_quietly(tmp_path, capsys):
+    path = tmp_path / "config.toml"
+    path.write_text('[briefing]\nprepare_ahead = true\n[user]\nname = "sir"\n')
+    load_config(path)
+    assert "Ignoring" not in capsys.readouterr().out
+
+
+def test_silence_around_a_recording_is_trimmed():
+    from assistant.voice import SAMPLE_RATE, trim_silence
+
+    second = SAMPLE_RATE
+    speech = (np.sin(np.arange(second) / 5) * 8000).astype(np.int16)
+    padded = np.concatenate([np.zeros(second, np.int16), speech, np.zeros(second, np.int16)])
+    trimmed = trim_silence(padded)
+    # about 0.02 s kept before the speech and 0.15 s after it
+    assert abs(len(trimmed) - (len(speech) + 0.17 * second)) < 0.01 * second
+    assert trim_silence(np.zeros(100, np.int16)).size == 100  # pure silence is left alone

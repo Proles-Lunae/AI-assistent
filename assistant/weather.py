@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import cache
 
@@ -50,24 +50,13 @@ class WeatherReport:
         """Only worth saying when the chance of rain is over 20 percent."""
         return self.rain_chance > RAIN_MENTION_ABOVE
 
-    def spoken_facts(self) -> dict:
-        """What's read out: place, conditions, latest temperature, and rain if likely."""
-        facts = {
-            "city": self.city,
-            "conditions": self.description,
-            "temperature": round(self.temperature),  # whole numbers read aloud better
-            "unit": self.temperature_unit,
-        }
+    def spoken(self, period: str) -> str:
+        """The sentence she says after the greeting, e.g. "It's 8 degrees."."""
+        t = round(self.temperature)
+        degrees = f"{'minus ' if t < 0 else ''}{abs(t)} degree{'' if abs(t) == 1 else 's'}"
+        text = f"It's {degrees}"
         if self.mention_rain:
-            facts["rain_chance_percent"] = self.rain_chance
-        return facts
-
-    def summary(self, period: str = "today") -> str:
-        """A one-sentence spoken forecast, used when Claude isn't available."""
-        when = "today" if period == "today" else f"this {period}"
-        text = f"In {self.city} it's {round(self.temperature)} degrees and {self.description}"
-        if self.mention_rain:
-            text += f", with a {self.rain_chance} percent chance of rain {when}"
+            text += f", with a {self.rain_chance} percent chance of rain this {period}"
         return text + "."
 
 
@@ -111,6 +100,7 @@ def _get_json(url: str, params: dict, timeout: float = 10.0) -> dict:
         raise
 
 
+@cache  # a city doesn't move: look it up once
 def find_city(city: str) -> tuple[float, float, str]:
     """Return (latitude, longitude, display name) for a city name."""
     results = _get_json(GEOCODE_URL, {"name": city, "count": 1, "language": "en"}).get("results")
