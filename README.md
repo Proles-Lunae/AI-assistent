@@ -93,6 +93,8 @@ Prompt. She opens in her own window:
   starten**. She then starts when you log in, hidden in the tray, listening for
   claps. Untick it to stop that. (Or: `python -m assistant --autostart on` / `off`.)
 - Starting her a second time just brings the open window forward.
+  After an update (`git pull`), starting her again replaces the running copy
+  with the new version.
 - Messages for troubleshooting go to `assistant.log` in the project folder.
 
 **Other commands** (in the Command Prompt):

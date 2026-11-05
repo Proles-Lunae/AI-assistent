@@ -18,7 +18,7 @@ import threading
 import traceback
 from pathlib import Path
 
-from PySide6.QtCore import (QEasingCurve, QEvent, QObject, QPointF, QPropertyAnimation, QRectF,
+from PySide6.QtCore import (QEasingCurve, QThread, QEvent, QObject, QPointF, QPropertyAnimation, QRectF,
                             Qt, QTimer, QVariantAnimation, Signal)
 from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QIcon, QKeySequence,
                            QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
@@ -905,25 +905,80 @@ class LogFile:
         self.file.flush()
 
 
-def already_running() -> bool:
-    """If she's already running, ask that window to come forward and say so."""
+def code_version() -> str:
+    """A fingerprint of her program files: it changes with every update."""
+    import hashlib
+
+    digest = hashlib.sha1()
+    for path in sorted(Path(__file__).parent.glob("*.py")):
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:12]
+
+
+def already_running(version: str) -> str:
+    """Is she already running? Returns:
+
+    "no"    - she isn't: go ahead and start.
+    "same"  - she is, this version: her window has been brought forward.
+    "older" - an older version was running and has closed itself: go ahead.
+    "stuck" - an older version is running that can't be asked to close
+              (from before this check existed): it has to be quit by hand.
+    """
     socket = QLocalSocket()
     socket.connectToServer(INSTANCE_NAME)
     if not socket.waitForConnected(300):
-        return False
-    socket.write(b"show")
+        return "no"
+    socket.write(f"show {version}\n".encode())
     socket.waitForBytesWritten(300)
+    reply = bytes(socket.readAll()).decode() if socket.waitForReadyRead(1500) else ""
     socket.disconnectFromServer()
-    return True
+    if reply.startswith("ok"):
+        return "same"
+    if not reply.startswith("restart"):
+        return "stuck"
+    for _ in range(50):  # wait (up to 10 s) until the old one has closed
+        probe = QLocalSocket()
+        probe.connectToServer(INSTANCE_NAME)
+        if not probe.waitForConnected(200):
+            return "older"
+        probe.disconnectFromServer()
+        QThread.msleep(200)
+    return "stuck"
 
 
-def answer_later_starts(window: Window) -> QLocalServer:
-    """Bring this window forward whenever she's started a second time."""
+def answer_later_starts(window: Window, version: str) -> QLocalServer:
+    """When she's started a second time: the same version just brings this
+    window forward; a newer version (after an update) takes over, so this
+    one closes."""
     server = QLocalServer(window)
     QLocalServer.removeServer(INSTANCE_NAME)  # left over if she wasn't closed properly
     server.listen(INSTANCE_NAME)
-    server.newConnection.connect(lambda: (server.nextPendingConnection(), window.bring_back()))
+
+    def answer(socket: QLocalSocket) -> None:
+        words = bytes(socket.readAll()).decode().split()
+        if len(words) > 1 and words[1] != version:  # an updated version wants to start
+            socket.write(b"restart\n")
+            socket.flush()
+            QTimer.singleShot(300, window.quit)
+        else:
+            socket.write(b"ok\n")
+            socket.flush()
+            window.bring_back()
+
+    def connected() -> None:
+        socket = server.nextPendingConnection()
+        if socket.bytesAvailable() or socket.waitForReadyRead(500):
+            answer(socket)
+        else:
+            socket.readyRead.connect(lambda: answer(socket))
+
+    server.newConnection.connect(connected)
     return server
+
+
+OLDER_VERSION_RUNNING = (
+    "An older version of {name} is still running, in the tray next to the clock.\n\n"
+    "Please right-click her tray icon, choose \"Beenden\" (Quit), and start her again.")
 
 
 def run_window(config: Config, minimized: bool = False) -> None:
@@ -934,8 +989,16 @@ def run_window(config: Config, minimized: bool = False) -> None:
     from .main import Assistant  # here, so the window module stays light to import
 
     app = QApplication.instance() or QApplication(sys.argv)
-    if already_running():
+    version = code_version()
+    running = already_running(version)
+    if running == "same":
         return  # the window that's already open has come forward
+    if running == "stuck":
+        from PySide6.QtWidgets import QMessageBox
+
+        QMessageBox.information(None, config.assistant.display_name(),
+                                OLDER_VERSION_RUNNING.format(name=config.assistant.display_name()))
+        return
     sys.stdout = LogFile(LOG_FILE, sys.__stdout__)
     sys.stderr = sys.stdout
     bridge = Bridge()
@@ -945,7 +1008,7 @@ def run_window(config: Config, minimized: bool = False) -> None:
     window = Window(assistant.words, on_talk=assistant.request_talk,
                     on_stop=assistant.request_stop, name=assistant.name)
     bridge.event.connect(window.on_event)
-    window.server = answer_later_starts(window)
+    window.server = answer_later_starts(window, version)
     if minimized and window.tray is not None:
         window.hint_shown = True  # she starts in the tray on purpose: no reminder needed
     else:

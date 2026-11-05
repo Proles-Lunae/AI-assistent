@@ -595,3 +595,36 @@ def test_window_and_shortcuts_are_called_rose(app, monkeypatch, tmp_path):
     monkeypatch.setattr(shortcut, "create_desktop_shortcut", lambda name: made.append(name) or name)
     main.make_shortcut(Config())
     assert made == ["Rose"]
+
+
+@pytest.mark.parametrize("written", ["Assistentin", "assistant", " Assistent ", ""])
+def test_old_generic_names_in_config_mean_rose(written):
+    from assistant.config import AssistantSettings
+
+    assert AssistantSettings(name=written).display_name() == "Rose"
+
+
+def test_a_name_you_chose_is_kept():
+    from assistant.config import AssistantSettings
+
+    assert AssistantSettings(name="Eva").display_name() == "Eva"
+
+
+def test_code_version_changes_when_her_files_change(monkeypatch, tmp_path):
+    from assistant import window
+
+    package = tmp_path / "assistant"
+    package.mkdir()
+    (package / "main.py").write_text("print('v1')")
+    monkeypatch.setattr(window, "__file__", str(package / "window.py"))
+    first = window.code_version()
+    assert first == window.code_version()  # stable while nothing changes
+    (package / "main.py").write_text("print('v2')")
+    assert window.code_version() != first
+
+
+def test_older_version_message_names_her():
+    from assistant.window import OLDER_VERSION_RUNNING
+
+    text = OLDER_VERSION_RUNNING.format(name="Rose")
+    assert "older version of Rose" in text and "Beenden" in text

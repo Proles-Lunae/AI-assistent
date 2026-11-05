@@ -22,6 +22,11 @@ class UserSettings:
         return self.name.strip() or "sir"
 
 
+# Her generic titles from before she had a name; in an older config.toml
+# they mean "the default name" (now Rose).
+OLD_DEFAULT_NAMES = {"assistentin", "assistent", "assistant"}
+
+
 @dataclass
 class AssistantSettings:
     # Her name: shown in the circle in her window, in the window's title, the
@@ -30,7 +35,10 @@ class AssistantSettings:
     name: str = "Rose"
 
     def display_name(self, fallback: str = "Rose") -> str:
-        return " ".join(self.name.split()) or fallback
+        name = " ".join(self.name.split())
+        if name.lower() in OLD_DEFAULT_NAMES:  # from before she was called Rose
+            return fallback
+        return name or fallback
 
 
 @dataclass
