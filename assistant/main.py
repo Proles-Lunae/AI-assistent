@@ -43,9 +43,9 @@ class Assistant:
         self.brain = ClaudeBrain(config.brain)
         self.transcriber = Transcriber(config.listen, self.words.code, self.words.whisper_prompt)
 
-    def _speaking(self, text: str) -> None:
+    def _speaking(self, text: str, continued: bool = False) -> None:
         self.events("state", state="speaking")
-        self.events("said", text=text)
+        self.events("said", text=text, continued=continued)
 
     def note(self, text: str) -> None:
         """A message worth showing: printed, and shown in the window."""
@@ -130,15 +130,16 @@ class Assistant:
                 return
             print("(Thinking...)")
             try:
-                answer = self.brain.answer(question, history, self.context(),
-                                           self.config.user.address(),
-                                           self.words.claude_instruction)
+                # She starts speaking as soon as Claude has written the first
+                # sentence, and says the rest while it's still being written.
+                answer = self.speaker.say_sentences(self.brain.answer_in_sentences(
+                    question, history, self.context(), self.config.user.address(),
+                    self.words.claude_instruction))
             except BrainError as exc:
                 self.note(f"Claude couldn't answer: {exc}")
                 self.speaker.play(self.recording(self.words.no_brain))
                 continue  # she can still be asked again, or told to stop
             history.append((question, answer))
-            self.speaker.say(answer)
 
     def hear_out(self, blocks, audio) -> str:
         """Turn your question into text, waiting a little longer while it sounds

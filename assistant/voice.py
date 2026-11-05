@@ -55,7 +55,9 @@ class Speaker:
         self.s = settings
         self.language = language
         self.voice = choose_voice(settings.voice, language, default_voice or "en-GB-SoniaNeural")
-        self.on_speak = lambda text: None  # told each sentence as she starts saying it
+        # Told each sentence as she starts saying it; ``continued`` = it carries
+        # on the previous sentence of the same answer.
+        self.on_speak = lambda text, continued=False: None
 
     def say(self, text: str) -> None:
         self.play(self.prepare(text))
@@ -68,11 +70,11 @@ class Speaker:
             print(f"(Online voice failed: {exc}. Will use the offline voice.)")
             return Speech(text)
 
-    def play(self, speech: Speech, wait: bool = True) -> None:
+    def play(self, speech: Speech, wait: bool = True, continued: bool = False) -> None:
         """Speak ``speech``. With ``wait=False`` it returns while still talking
         (call ``finish()`` to wait), so the next sentence can be made meanwhile."""
         print(f"Assistant: {speech.text}")
-        self.on_speak(speech.text)
+        self.on_speak(speech.text, continued)
         if speech.samples is not None:
             try:
                 import sounddevice as sd
@@ -84,6 +86,36 @@ class Speaker:
             except Exception as exc:  # no audio device...
                 print(f"(Couldn't play audio: {exc}. Trying the offline voice.)")
         self._say_offline(speech.text)
+
+    def say_sentences(self, sentences) -> str:
+        """Speak sentences as they arrive (e.g. while Claude is still writing):
+        the next one is turned into speech while she says this one. Returns all
+        she said. An error before the first sentence is passed on."""
+        import queue
+        import threading
+
+        ready: queue.Queue = queue.Queue()
+        problems: list[Exception] = []
+
+        def prepare_all() -> None:
+            try:
+                for sentence in sentences:
+                    ready.put(self.prepare(sentence))
+            except Exception as exc:
+                problems.append(exc)
+            finally:
+                ready.put(None)  # no more sentences
+
+        threading.Thread(target=prepare_all, name="prepare-speech", daemon=True).start()
+        said: list[str] = []
+        while (speech := ready.get()) is not None:
+            self.play(speech, continued=bool(said))
+            said.append(speech.text)
+        if problems and not said:
+            raise problems[0]
+        if problems:
+            print(f"(The answer stopped early: {problems[0]})")
+        return " ".join(said)
 
     def beep(self) -> None:
         """A short soft tone that means "I'm listening"."""

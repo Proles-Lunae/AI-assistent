@@ -211,6 +211,16 @@ class Chat(QScrollArea):
             old = self.column.takeAt(1).widget()
             old.deleteLater()
 
+    def extend_last(self, text: str) -> None:
+        """Add a sentence to her last bubble (an answer arrives sentence by sentence)."""
+        bubbles = [b for b in self.widget().findChildren(QLabel) if b.objectName() == "her"]
+        if not bubbles:
+            self.add(text, mine=False)
+            return
+        bubble = bubbles[-1]
+        bubble.setText(f"{bubble.text()} {text}")
+        self._fit(bubble)
+
     def _fit(self, bubble: QLabel) -> None:
         """As wide as its text, but at most 80% of the chat's width (then it wraps)."""
         bubble.ensurePolished()  # so the style sheet's font size is applied
@@ -363,7 +373,10 @@ class Window(QWidget):
             if self.tray:
                 self.tray.setToolTip(f"{self.words.app_title}: {self.words.status.get(state, '')}")
         elif kind == "said":
-            self.chat.add(data["text"], mine=False)
+            if data.get("continued"):
+                self.chat.extend_last(data["text"])  # the next sentence of the same answer
+            else:
+                self.chat.add(data["text"], mine=False)
         elif kind == "heard":
             self.chat.add(data["text"], mine=True)
         elif kind == "level":

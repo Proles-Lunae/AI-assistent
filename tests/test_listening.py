@@ -122,7 +122,7 @@ def make_talker(monkeypatch, said, answers=None, brain_fails=False, **listen):
     a = main.Assistant(config)
     spoken, asked = [], []
     a.speaker.prepare = lambda text: SimpleNamespace(text=text, samples=None)
-    a.speaker.play = lambda speech, wait=True: spoken.append(speech.text)
+    a.speaker.play = lambda speech, wait=True, continued=False: spoken.append(speech.text)
     a.speaker.say = lambda text: spoken.append(text)
     a.speaker.beep = lambda: spoken.append("<beep>")
     turns = iter(said)
@@ -145,9 +145,9 @@ def make_talker(monkeypatch, said, answers=None, brain_fails=False, **listen):
         asked.append((question, list(history), context, address))
         if brain_fails:
             raise BrainError("not logged in")
-        return (answers or {}).get(question, f"Answer to: {question}")
+        yield (answers or {}).get(question, f"Answer to: {question}")
 
-    a.brain.answer = fake_answer
+    a.brain.answer_in_sentences = fake_answer
     return a, spoken, asked
 
 

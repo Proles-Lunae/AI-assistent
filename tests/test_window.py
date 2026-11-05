@@ -232,12 +232,13 @@ def test_assistant_reports_what_happens(monkeypatch):
     monkeypatch.setattr(main, "record_question", fake_record)
     a.transcriber.transcribe = lambda audio, rate: audio[0]
     monkeypatch.setattr(a, "context", lambda: "It is Friday.")
-    a.brain.answer = lambda *args: "Es ist acht Uhr, Sir."
+    a.brain.answer_in_sentences = lambda *args: iter(["Es ist acht Uhr, Sir."])
     a.converse(queue.Queue())
     kinds = [(k, d.get("state") or d.get("text") or d.get("level")) for k, d in events]
     assert kinds[:6] == [("state", "listening"), ("level", 0.02), ("state", "thinking"),
                          ("heard", "Wie spät ist es?"), ("state", "speaking"),
                          ("said", "Es ist acht Uhr, Sir.")]
+    assert all(not d.get("continued") for k, d in events if k == "said" and d["text"] == "Danke.")
     assert ("heard", "Danke.") in kinds and ("said", DE.goodbye) in kinds
 
 
@@ -258,3 +259,11 @@ def test_a_problem_stays_visible_and_turns_the_orb_red(window):
 def test_long_notes_are_shortened(window):
     window.on_event("note", {"text": "x " * 500})
     assert len(window.note.text()) <= 160 and window.note.text().endswith("…")
+
+
+def test_an_answer_spoken_in_pieces_stays_one_bubble(window):
+    window.on_event("heard", {"text": "Wer hat Faust geschrieben?"})
+    window.on_event("said", {"text": "Goethe, Sir.", "continued": False})
+    window.on_event("said", {"text": "Der erste Teil erschien 1808.", "continued": True})
+    assert bubbles(window)[-2:] == [("you", "Wer hat Faust geschrieben?"),
+                                    ("her", "Goethe, Sir. Der erste Teil erschien 1808.")]

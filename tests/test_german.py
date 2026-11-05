@@ -130,7 +130,7 @@ def test_german_conversation_uses_german_texts(monkeypatch):
 
     a = main.Assistant(Config())  # default: German
     spoken, instructions = [], []
-    a.speaker.play = lambda speech, wait=True: spoken.append(speech.text)
+    a.speaker.play = lambda speech, wait=True, continued=False: spoken.append(speech.text)
     a.speaker.prepare = lambda text: SimpleNamespace(text=text, samples=None)
     a.speaker.say = spoken.append
     a.speaker.beep = lambda: None
@@ -145,8 +145,8 @@ def test_german_conversation_uses_german_texts(monkeypatch):
     monkeypatch.setattr(main, "record_question", fake_record)
     a.transcriber.transcribe = lambda audio, rate: audio[0]
     monkeypatch.setattr(a, "context", lambda: "It is Friday.")
-    a.brain.answer = lambda q, h, c, address, instruction: (instructions.append(instruction)
-                                                            or "Es ist acht Uhr, Sir.")
+    a.brain.answer_in_sentences = lambda q, h, c, address, instruction: iter(
+        [instructions.append(instruction) or "Es ist acht Uhr, Sir."])
     a.converse(queue.Queue())
     assert spoken == ["Es ist acht Uhr, Sir.", DE.goodbye]
     assert instructions == [DE.claude_instruction]

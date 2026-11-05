@@ -564,7 +564,18 @@ with open(os.environ["STAND_IN_LOG"], "w", encoding="utf-8") as log:
 if os.environ.get("STAND_IN_FAIL"):
     print("Not logged in", file=sys.stderr)
     sys.exit(1)
-print("Mild and dry this evening. Enjoy it!")
+if "stream-json" not in sys.argv:
+    print("Mild and dry this evening. Enjoy it!")
+    sys.exit(0)
+import time
+print(json.dumps({"type": "system", "subtype": "init"}), flush=True)
+pause = float(os.environ.get("STAND_IN_PAUSE", "0"))
+for piece in os.environ.get("STAND_IN_PIECES", "Mild and | dry. Enjoy| it!").split("|"):
+    event = {"type": "content_block_delta", "delta": {"type": "text_delta", "text": piece}}
+    print(json.dumps({"type": "stream_event", "event": event}), flush=True)
+    time.sleep(pause)
+print("not json", flush=True)
+print(json.dumps({"type": "result", "result": "Mild and dry. Enjoy it!"}), flush=True)
 """
 
 
@@ -663,7 +674,7 @@ def make_assistant(monkeypatch, weather_seconds=0.0, fail=False):
     a.transcriber.load = lambda: None  # no speech model in tests
     a.speaker.prepare = lambda text: SimpleNamespace(text=text, samples=None)
     played = []
-    a.speaker.play = lambda speech, wait=True: played.append(speech.text)
+    a.speaker.play = lambda speech, wait=True, continued=False: played.append(speech.text)
     a.speaker.finish = lambda: played.append("<greeting finished>")
     return a, played, fetches
 
@@ -683,7 +694,7 @@ def test_greeting_does_not_wait_for_the_weather(monkeypatch):
 
     a, played, _ = make_assistant(monkeypatch, weather_seconds=0.5)
     first_sound = []
-    a.speaker.play = lambda speech, wait=True: (first_sound.append(_time.monotonic()),
+    a.speaker.play = lambda speech, wait=True, continued=False: (first_sound.append(_time.monotonic()),
                                                  played.append(speech.text))
     start = _time.monotonic()
     a.wake_up()

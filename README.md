@@ -111,7 +111,8 @@ German she addresses you politely with "Sie". All her sentences are in
 
 After the greeting you hear a short **beep**: she's listening. Ask your question
 normally; she notices when you've stopped (about a second of quiet), and answers
-after a few seconds of thinking. Pauses are fine: if what you've said so far
+after a few seconds of thinking. She starts speaking as soon as Claude has
+written the first sentence, and says the rest while it's still being written. Pauses are fine: if what you've said so far
 sounds unfinished (it ends with "und", "aber", "weil", "ähm", a comma...), she
 waits up to 2 more seconds for you to carry on. Then she beeps again for a follow-up question,
 and remembers what you talked about. Take as long as you like between questions:
