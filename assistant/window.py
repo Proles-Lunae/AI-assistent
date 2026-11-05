@@ -714,11 +714,15 @@ class Window(QWidget):
         leave.triggered.connect(self.quit)
         menu.addAction(show)
         if sys.platform == "win32":
-            from .shortcut import autostart_enabled
+            from .shortcut import autostart_enabled, rename_autostart
 
+            try:
+                rename_autostart(self.name)  # e.g. "Assistentin" -> "Rose"
+            except OSError:
+                pass
             self.autostart = QAction(self.words.autostart, menu)
             self.autostart.setCheckable(True)
-            self.autostart.setChecked(autostart_enabled(self.words.app_title))
+            self.autostart.setChecked(autostart_enabled(self.name))
             self.autostart.toggled.connect(self._autostart_toggled)
             menu.addAction(self.autostart)
         menu.addSeparator()
@@ -771,7 +775,7 @@ class Window(QWidget):
         from .shortcut import set_autostart
 
         try:
-            set_autostart(self.words.app_title, enabled)
+            set_autostart(self.name, enabled)
         except Exception as exc:
             print(f"({self.words.autostart_failed}: {exc})")
             self.on_event("note", {"text": f"{self.words.autostart_failed}: {exc}"})

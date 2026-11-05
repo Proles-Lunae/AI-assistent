@@ -93,13 +93,31 @@ def autostart_path(name: str) -> Path:
     return startup_folder() / f"{name}.lnk"
 
 
+# Names her Startup shortcut had before she was called by her own name.
+OLD_NAMES = ("Assistentin", "Assistant")
+
+
 def autostart_enabled(name: str) -> bool:
-    return sys.platform == "win32" and autostart_path(name).exists()
+    if sys.platform != "win32":
+        return False
+    return any(autostart_path(n).exists() for n in (name, *OLD_NAMES))
 
 
 def set_autostart(name: str, enabled: bool) -> None:
     """Start her when you log in to Windows (or stop doing that)."""
     if enabled:
         create_shortcut(name, "Startup", AUTOSTART_ARGUMENTS)
-    else:
+    for old in (n for n in OLD_NAMES if n != name):  # a shortcut under an older name
+        autostart_path(old).unlink(missing_ok=True)
+    if not enabled:
         autostart_path(name).unlink(missing_ok=True)
+
+
+def rename_autostart(name: str) -> None:
+    """If she starts with Windows under an older name, give the shortcut her name."""
+    new = autostart_path(name)
+    for old in (autostart_path(n) for n in OLD_NAMES if n != name):
+        if old.exists() and not new.exists():
+            old.rename(new)
+        elif old.exists():
+            old.unlink()

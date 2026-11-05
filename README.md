@@ -71,7 +71,7 @@ model (about 480 MB).
 python -m assistant --shortcut
 ```
 
-Then double-click **Assistentin** on your desktop to start her, with no Command
+Then double-click **Rose** on your desktop to start her, with no Command
 Prompt. She opens in her own window:
 
 - **The circle** carries her name and shows what she's doing: teal and slowly

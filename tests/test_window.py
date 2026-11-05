@@ -440,7 +440,7 @@ def test_autostart_command(monkeypatch, tmp_path, capsys):
     for value in ("on", "off"):
         monkeypatch.setattr(sys, "argv", ["assistant", "--config", str(config), "--autostart", value])
         main.main()
-    assert changes == [("Assistentin", True), ("Assistentin", False)]
+    assert changes == [("Rose", True), ("Rose", False)]
     out = capsys.readouterr().out
     assert "start with Windows" in out and "won't start with Windows" in out
 
@@ -488,13 +488,14 @@ def test_her_name_comes_from_the_settings():
     from assistant import main
     from assistant.config import AssistantSettings
 
-    assert AssistantSettings().display_name("Assistentin") == "Assistentin"
-    assert AssistantSettings(name="  Eva  ").display_name("Assistentin") == "Eva"
+    assert AssistantSettings().display_name() == "Rose"  # her name by default
+    assert AssistantSettings(name="").display_name() == "Rose"
+    assert AssistantSettings(name="  Eva  ").display_name() == "Eva"
     config = Config()
     config.assistant.name = "Eva"
     a = main.Assistant(config)
     assert a.name == "Eva" and a.context().startswith("Your name is Eva. It is ")
-    assert main.Assistant(Config()).name == "Assistentin"
+    assert main.Assistant(Config()).name == "Rose"
 
 
 def test_name_setting_is_read_from_the_file(tmp_path):
@@ -554,3 +555,43 @@ def test_notes_fade_away_after_a_while(window):
     window.note_fade.animation.setCurrentTime(window.note_fade.animation.duration())  # finished
     QtWidgets.QApplication.processEvents()
     assert window.note.text() == ""
+
+
+def test_old_autostart_shortcut_is_carried_over_to_her_name(monkeypatch, tmp_path):
+    from assistant import shortcut
+
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setattr(shortcut.sys, "platform", "win32")
+    folder = shortcut.startup_folder()
+    folder.mkdir(parents=True)
+    (folder / "Assistentin.lnk").write_text("old shortcut")
+    assert shortcut.autostart_enabled("Rose")  # the tick stays on after the rename
+    shortcut.rename_autostart("Rose")
+    assert (folder / "Rose.lnk").read_text() == "old shortcut"
+    assert not (folder / "Assistentin.lnk").exists()
+    shortcut.rename_autostart("Rose")  # nothing left to do: no error
+
+
+def test_turning_autostart_off_also_removes_the_old_name(monkeypatch, tmp_path):
+    from assistant import shortcut
+
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setattr(shortcut.sys, "platform", "win32")
+    folder = shortcut.startup_folder()
+    folder.mkdir(parents=True)
+    (folder / "Assistentin.lnk").touch()
+    shortcut.set_autostart("Rose", False)
+    assert not shortcut.autostart_enabled("Rose") and list(folder.iterdir()) == []
+
+
+def test_window_and_shortcuts_are_called_rose(app, monkeypatch, tmp_path):
+    from assistant import main, shortcut
+    from assistant.window import Window
+
+    w = Window(DE, name=main.Assistant(Config()).name)
+    assert w.windowTitle() == "Rose" and w.name == "Rose"
+    w.quitting = True
+    made = []
+    monkeypatch.setattr(shortcut, "create_desktop_shortcut", lambda name: made.append(name) or name)
+    main.make_shortcut(Config())
+    assert made == ["Rose"]

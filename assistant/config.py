@@ -24,12 +24,12 @@ class UserSettings:
 
 @dataclass
 class AssistantSettings:
-    # Her name: shown in the circle in her window, in the window's title and
-    # the tray icon, and Claude is told it, so she knows it when you ask.
-    # "" = the usual title in her language ("Assistentin" / "Assistant").
-    name: str = ""
+    # Her name: shown in the circle in her window, in the window's title, the
+    # tray icon and her shortcuts, and Claude is told it, so she knows it when
+    # you ask. "" = Rose.
+    name: str = "Rose"
 
-    def display_name(self, fallback: str = "Assistant") -> str:
+    def display_name(self, fallback: str = "Rose") -> str:
         return " ".join(self.name.split()) or fallback
 
 

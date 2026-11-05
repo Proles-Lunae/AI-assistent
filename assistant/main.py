@@ -38,7 +38,7 @@ class Assistant:
         self.talk_request = threading.Event()  # the window's Talk button
         self.stop_request = threading.Event()  # the window's "end conversation" button
         self.words = phrases_for(config.user.language)  # everything she says, in her language
-        self.name = config.assistant.display_name(self.words.app_title)  # shown in her window
+        self.name = config.assistant.display_name()  # shown in her window
         self.speaker = Speaker(config.voice, self.words.code, self.words.voice)
         self.speaker.on_speak = self._speaking
         self._ready: dict[str, Speech] = {}  # greetings and the no-weather line, by text
@@ -288,7 +288,7 @@ def make_shortcut(config: Config) -> None:
     from .shortcut import create_desktop_shortcut
 
     try:
-        path = create_desktop_shortcut(phrases_for(config.user.language).app_title)
+        path = create_desktop_shortcut(config.assistant.display_name())
     except Exception as exc:
         print(f"Couldn't create the shortcut: {exc}")
         return
@@ -299,7 +299,7 @@ def make_shortcut(config: Config) -> None:
 def change_autostart(config: Config, enabled: bool) -> None:
     from .shortcut import autostart_path, set_autostart
 
-    name = phrases_for(config.user.language).app_title
+    name = config.assistant.display_name()
     try:
         set_autostart(name, enabled)
     except Exception as exc:

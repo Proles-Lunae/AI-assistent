@@ -6,8 +6,8 @@ name = "sir"              # what she calls you: "Guten Abend, Sir."
 language = "de"           # the language she speaks and understands: "de" or "en"
 
 [assistant]
-name = ""                 # her name, shown in the circle in her window, e.g. "Eva";
-                          # "" = "Assistentin" (German) or "Assistant" (English)
+name = "Rose"             # her name: in the circle in her window, the window title,
+                          # the tray and her shortcuts; Claude is told it too
 
 [weather]
 city = ""                 # "" = find your location automatically, or a city like "Berlin"
