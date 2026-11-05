@@ -12,6 +12,7 @@ from .brain import (
     NO_WEATHER,
     BrainError,
     ClaudeBrain,
+    frame_end,
     frame_start,
     standard_greeting,
     time_of_day,
@@ -34,52 +35,58 @@ class Assistant:
     def greeting_text(self, period: str) -> str:
         return standard_greeting(period, self.config.user.name)
 
-    def weather_text(self) -> tuple[str, bool]:
-        """Return (weather briefing text, whether the weather was included)."""
-        now = datetime.now()
+    def weather_text(self, start: datetime) -> tuple[str, bool]:
+        """Return (forecast for the frame at ``start``, whether weather was included)."""
+        period = time_of_day(start)
         try:
-            weather = get_weather(self.config.weather.city, self.config.weather.units)
+            weather = get_weather(
+                self.config.weather.city, self.config.weather.units, start, frame_end(start)
+            )
         except Exception as exc:
             print(f"(Couldn't get the weather: {exc})")
             return NO_WEATHER, False
         try:
-            return self.brain.weather_briefing(weather, now), True
+            return self.brain.weather_briefing(weather, start), True
         except BrainError as exc:
-            print(f"(Claude unavailable, using a simple weather report: {exc})")
-            return weather.summary(), True
+            print(f"(Claude unavailable, using a simple forecast: {exc})")
+            return weather.summary(period), True
 
-    def build_briefing(self) -> Briefing:
-        frame = frame_start(datetime.now())
-        text, complete = self.weather_text()
+    def build_briefing(self, start: datetime) -> Briefing:
+        """Make greeting + forecast for the time frame at ``start`` as one recording."""
+        weather, complete = self.weather_text(start)
+        greeting = self.greeting_text(time_of_day(start))
         return Briefing(
-            speech=self.speaker.prepare(text),
-            frame=frame,
+            speech=self.speaker.prepare(f"{greeting} {weather}"),
+            weather_text=weather,
+            frame=start,
             made_at=time.monotonic(),
             complete=complete,
         )
 
     def greet_once(self) -> None:
-        """Greet and give the weather right away (no preparing ahead)."""
-        self.speaker.say(self.greeting_text(time_of_day(datetime.now())))
+        """Greet and give the forecast right away (no preparing ahead)."""
         start = time.monotonic()
-        briefing = self.build_briefing()
-        print(f"(Weather briefing ready after {time.monotonic() - start:.1f} seconds)")
+        briefing = self.build_briefing(frame_start(datetime.now()))
+        print(f"(Ready after {time.monotonic() - start:.1f} seconds)")
         self.speaker.play(briefing.speech)
 
     def wake_up(self) -> None:
         print("\nDouble clap heard!")
-        period = time_of_day(datetime.now())
-        greeting = self.greetings.get(period)
-        if greeting is None:
-            self.speaker.say(self.greeting_text(period))
+        briefing = self.cache.take() if self.cache else None
+        if briefing is not None:
+            self.speaker.play(briefing.speech)  # greeting and forecast in one go
         else:
-            self.speaker.play(greeting)
-        briefing = None
-        if self.cache:
-            briefing = self.cache.take(timeout=self.config.brain.timeout + 30)
-        if briefing is None:
-            briefing = self.build_briefing()
-        self.speaker.play(briefing.speech)
+            # Not ready yet (just started): greet now, forecast as soon as it's ready.
+            period = time_of_day(datetime.now())
+            if period in self.greetings:
+                self.speaker.play(self.greetings[period])
+            else:
+                self.speaker.say(self.greeting_text(period))
+            if self.cache:
+                briefing = self.cache.take(timeout=self.config.brain.timeout + 30)
+            if briefing is None:
+                briefing = self.build_briefing(frame_start(datetime.now()))
+            self.speaker.say(briefing.weather_text)
         print("\nListening for a double clap again...")
 
     def run(self) -> None:

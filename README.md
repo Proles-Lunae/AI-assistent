@@ -91,7 +91,7 @@ speakers ◄── voice.py (British voice) ◄── brain.py (claude -p, your 
 | File | Job |
 | --- | --- |
 | `assistant/clap_detector.py` | Spots short, sharp sounds and checks the gap between two of them |
-| `assistant/weather.py` | Finds your location (or city) and fetches the weather and today's forecast |
+| `assistant/weather.py` | Finds your location (or city) and fetches the hourly forecast for a time frame |
 | `assistant/brain.py` | Time frames, standard greetings, and asking Claude for the weather briefing |
 | `assistant/voice.py` | Turns text into speech and plays it |
 | `assistant/main.py` | Ties everything together and handles the command options |
@@ -106,11 +106,14 @@ standard greeting:
 | 11am – 6pm | Good afternoon |
 | 6pm – 3am | Good evening |
 
-The audio for all three greetings is made when the assistant starts, so the
-greeting plays the instant you clap. The weather briefing that follows is written
-by Claude once per time frame, in the background (`assistant/briefing.py`), and
-reused for every clap in that frame. That's at most three Claude requests a day.
-Set `prepare_ahead = false` under `[briefing]` to ask Claude on every clap instead.
+For each time frame, the greeting and a one-sentence forecast for that frame's
+hours (for example 6pm–3am for the evening) are made together as **one
+recording**, in the background (`assistant/briefing.py`). When you clap, it plays
+straight away, with no pause between the greeting and the forecast. Every clap in
+the same frame replays it. The next frame's recording is made 30 minutes before
+that frame starts, so there's no wait when it changes. That's three Claude
+requests a day. Set `prepare_ahead = false` under `[briefing]` to ask Claude on
+every clap instead.
 
 If Claude can't be reached, the assistant still gives you a simple built-in
 weather report. If the online voice can't be reached, it falls back to your computer's

@@ -1,4 +1,3 @@
-import itertools
 from datetime import datetime
 
 from assistant.briefing import Briefing, BriefingCache
@@ -6,92 +5,119 @@ from assistant.voice import Speech
 
 MORNING = datetime(2026, 1, 2, 3)
 AFTERNOON = datetime(2026, 1, 2, 11)
+EVENING = datetime(2026, 1, 2, 18)
 
 
-class FakeClock:
-    def __init__(self):
-        self.now = 0.0
+class Fake:
+    """A settable value that can be called, for the clock and the date/time."""
+
+    def __init__(self, value):
+        self.value = value
 
     def __call__(self):
-        return self.now
+        return self.value
 
 
-def make_cache(clock, frame):
-    counter = itertools.count(1)
+def make_cache(now, clock=None, complete=True, fail_times=0):
+    clock = clock or Fake(0.0)
     built = []
 
-    def build():
-        n = next(counter)
-        built.append(n)
-        return Briefing(Speech(f"briefing {n}"), frame[0], clock(), True)
+    def build(frame):
+        if len([b for b in built if b == "fail"]) < fail_times:
+            built.append("fail")
+            raise RuntimeError("network down")
+        built.append(frame)
+        return Briefing(Speech(f"briefing for {frame:%H}"), "forecast", frame, clock(), complete)
 
-    cache = BriefingCache(build, clock=clock, frame=lambda: frame[0], retry_delay=0.01)
+    cache = BriefingCache(build, clock=clock, now=now, retry_delay=0.01)
     return cache, built
 
 
-def test_same_briefing_is_reused_within_a_time_frame():
-    clock, frame = FakeClock(), [MORNING]
-    cache, built = make_cache(clock, frame)
+def test_greeting_and_forecast_are_ready_for_the_current_frame():
+    now = Fake(datetime(2026, 1, 2, 8))
+    cache, built = make_cache(now)
+    cache.start()
+    try:
+        assert cache.take(timeout=2).speech.text == "briefing for 03"
+        assert built == [MORNING]
+    finally:
+        cache.stop()
+
+
+def test_same_briefing_is_reused_within_a_frame():
+    now = Fake(datetime(2026, 1, 2, 4))
+    cache, built = make_cache(now)
     cache.start()
     try:
         first = cache.take(timeout=2)
-        clock.now = 3 * 3600  # hours later, still the same frame
-        second = cache.take(timeout=2)
-        assert first is second
-        assert built == [1]
+        now.value = datetime(2026, 1, 2, 9)  # hours later, still morning
+        assert cache.take(timeout=2) is first
+        assert built == [MORNING]
     finally:
         cache.stop()
 
 
-def test_new_briefing_when_time_frame_changes():
-    clock, frame = FakeClock(), [MORNING]
-    cache, built = make_cache(clock, frame)
+def test_next_frame_is_prepared_30_minutes_early():
+    now = Fake(datetime(2026, 1, 2, 10, 0))
+    cache, _ = make_cache(now)
+    assert cache.wanted_frames() == [MORNING]
+    now.value = datetime(2026, 1, 2, 10, 31)
+    assert cache.wanted_frames() == [MORNING, AFTERNOON]
+    now.value = datetime(2026, 1, 3, 2, 40)  # evening into the night -> next morning
+    assert cache.wanted_frames() == [datetime(2026, 1, 2, 18), datetime(2026, 1, 3, 3)]
+
+
+def test_frame_change_plays_the_ready_next_briefing_without_waiting():
+    now = Fake(datetime(2026, 1, 2, 17, 45))
+    cache, built = make_cache(now)
     cache.start()
     try:
-        assert cache.take(timeout=2).speech.text == "briefing 1"
-        frame[0] = AFTERNOON
-        assert cache.take(timeout=2).speech.text == "briefing 2"
+        cache.take(timeout=2)
+        for _ in range(200):  # wait until the evening one has been made too
+            if EVENING in built:
+                break
+            cache._thread.join(timeout=0.01)
+        now.value = datetime(2026, 1, 2, 18, 0, 5)
+        assert cache.take(timeout=0).speech.text == "briefing for 18"
+        assert built == [AFTERNOON, EVENING]
     finally:
         cache.stop()
 
 
-def test_briefing_from_an_earlier_frame_is_not_played():
-    cache = BriefingCache(lambda: None, frame=lambda: AFTERNOON)
-    cache._ready = Briefing(Speech("old"), MORNING, made_at=0, complete=True)
+def test_finished_frames_are_forgotten():
+    now = Fake(datetime(2026, 1, 2, 12))
+    cache, _ = make_cache(now)
+    cache._ready[MORNING] = Briefing(Speech("old"), "", MORNING, 0, True)
+    assert cache.next_to_build() == AFTERNOON
+    assert MORNING not in cache._ready
     assert cache.take(timeout=0) is None
 
 
-def test_briefing_without_weather_expires_sooner():
-    clock = FakeClock()
-    cache = BriefingCache(lambda: None, incomplete_max_age=120, clock=clock, frame=lambda: MORNING)
-    b = Briefing(Speech("no weather"), MORNING, made_at=0, complete=False)
-    clock.now = 100
-    assert cache.is_fresh(b)
-    clock.now = 130
-    assert not cache.is_fresh(b)
+def test_briefing_without_weather_is_remade_soon():
+    clock = Fake(0.0)
+    now = Fake(datetime(2026, 1, 2, 8))
+    cache, _ = make_cache(now, clock=clock)
+    b = Briefing(Speech("no weather"), "", MORNING, made_at=0, complete=False)
+    cache._ready[MORNING] = b
+    clock.value = 100
+    assert cache.usable(b) and cache.next_to_build() is None
+    clock.value = 130
+    assert not cache.usable(b) and cache.next_to_build() == MORNING
 
 
 def test_failed_build_is_retried():
-    attempts = []
-
-    def build():
-        attempts.append(1)
-        if len(attempts) < 3:
-            raise RuntimeError("network down")
-        return Briefing(Speech("finally"), MORNING, 0, True)
-
-    cache = BriefingCache(build, frame=lambda: MORNING, retry_delay=0.01)
+    now = Fake(datetime(2026, 1, 2, 8))
+    cache, built = make_cache(now, fail_times=2)
     cache.start()
     try:
-        assert cache.take(timeout=2).speech.text == "finally"
-        assert len(attempts) == 3
+        assert cache.take(timeout=2).speech.text == "briefing for 03"
+        assert built == ["fail", "fail", MORNING]
     finally:
         cache.stop()
 
 
 def test_stop_ends_worker():
-    clock, frame = FakeClock(), [MORNING]
-    cache, _ = make_cache(clock, frame)
+    cache, _ = make_cache(Fake(datetime(2026, 1, 2, 8)))
     cache.start()
     cache.take(timeout=2)
     cache.stop()

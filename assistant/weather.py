@@ -8,6 +8,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
 
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -67,12 +68,13 @@ class WeatherReport:
             data[key] = round(data[key])
         return data
 
-    def summary(self) -> str:
-        """A one-sentence spoken summary, used when Claude isn't available."""
+    def summary(self, period: str = "today") -> str:
+        """A one-sentence spoken forecast, used when Claude isn't available."""
+        when = period if period == "today" else f"this {period}"
         return (
-            f"In {self.city} it's {self.description} and {round(self.temperature)} "
-            f"degrees, with a high of {round(self.high)}, a low of {round(self.low)} "
-            f"and a {self.rain_chance} percent chance of rain."
+            f"In {self.city} {when} expect {self.description}, with a high of "
+            f"{round(self.high)} degrees, a low of {round(self.low)} and a "
+            f"{self.rain_chance} percent chance of rain."
         )
 
 
@@ -135,32 +137,62 @@ def detect_location() -> tuple[float, float, str]:
     raise ConnectionError("couldn't work out your location (" + "; ".join(problems) + ")")
 
 
-def get_weather(city: str = "", units: str = "metric") -> WeatherReport:
-    """Weather for ``city``, or for your detected location if ``city`` is empty."""
+def get_weather(
+    city: str = "",
+    units: str = "metric",
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> WeatherReport:
+    """Forecast for the hours from ``start`` to ``end`` (default: the next 8 hours).
+
+    Uses ``city``, or your detected location if ``city`` is empty. Times are
+    the local time of the place, which is normally your computer's time.
+    """
     lat, lon, name = find_city(city) if city.strip() else detect_location()
     imperial = units == "imperial"
     params = {
         "latitude": lat,
         "longitude": lon,
-        "current": "temperature_2m,apparent_temperature,weather_code,wind_speed_10m",
-        "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+        "hourly": "temperature_2m,apparent_temperature,weather_code,"
+        "precipitation_probability,wind_speed_10m",
         "timezone": "auto",
-        "forecast_days": 1,
+        "forecast_days": 3,
         "temperature_unit": "fahrenheit" if imperial else "celsius",
         "wind_speed_unit": "mph" if imperial else "kmh",
     }
     data = _get_json(FORECAST_URL, params)
-    current = data["current"]
-    daily = data["daily"]
+    now = datetime.now().replace(minute=0, second=0, microsecond=0)
+    start = max(start or now, now)  # the past isn't worth forecasting
+    end = end or start + timedelta(hours=8)
+    hours = summarise_hours(data["hourly"], start, end)
     return WeatherReport(
         city=name,
-        description=WEATHER_CODES.get(current["weather_code"], "unsettled weather"),
-        temperature=current["temperature_2m"],
-        feels_like=current["apparent_temperature"],
-        high=daily["temperature_2m_max"][0],
-        low=daily["temperature_2m_min"][0],
-        rain_chance=int(daily["precipitation_probability_max"][0] or 0),
-        wind_speed=current["wind_speed_10m"],
         temperature_unit="°F" if imperial else "°C",
         wind_unit="mph" if imperial else "km/h",
+        **hours,
     )
+
+
+def summarise_hours(hourly: dict, start: datetime, end: datetime) -> dict:
+    """Boil Open-Meteo's hourly forecast down to one summary for [start, end)."""
+    times = [datetime.fromisoformat(t) for t in hourly["time"]]
+    picked = [i for i, t in enumerate(times) if start <= t < end]
+    if not picked:  # clocks disagree: use the first hours available from start
+        picked = [i for i, t in enumerate(times) if t >= start][:8] or list(range(8))
+
+    def values(key):
+        return [hourly[key][i] for i in picked if hourly[key][i] is not None]
+
+    codes = values("weather_code")
+    # The most common weather; on a tie, the more notable one (higher code).
+    code = max(set(codes), key=lambda c: (codes.count(c), c)) if codes else -1
+    first = picked[0]
+    return {
+        "description": WEATHER_CODES.get(code, "unsettled weather"),
+        "temperature": hourly["temperature_2m"][first],
+        "feels_like": hourly["apparent_temperature"][first],
+        "high": max(values("temperature_2m")),
+        "low": min(values("temperature_2m")),
+        "rain_chance": int(max(values("precipitation_probability"), default=0)),
+        "wind_speed": max(values("wind_speed_10m")),
+    }

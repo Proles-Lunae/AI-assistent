@@ -61,6 +61,14 @@ def frame_start(now: datetime) -> datetime:
     return start
 
 
+FRAME_HOURS = {3: 8, 11: 7, 18: 9}  # how long each frame lasts, by start hour
+
+
+def frame_end(start: datetime) -> datetime:
+    """When the time frame that began at ``start`` ends (= the next one starts)."""
+    return start + timedelta(hours=FRAME_HOURS[start.hour])
+
+
 def standard_greeting(period: str, name: str = "") -> str:
     return GREETINGS[period] + (f", {name}" if name else "") + "."
 
@@ -113,13 +121,15 @@ class ClaudeBrain:
             raise BrainError(f"Claude didn't answer (exit {result.returncode}): {detail}")
         return reply
 
-    def weather_briefing(self, weather: WeatherReport, now: datetime) -> str:
-        """Ask Claude for a short spoken weather briefing (no greeting)."""
-        period = time_of_day(now)
+    def weather_briefing(self, weather: WeatherReport, start: datetime) -> str:
+        """Ask Claude for a one-sentence forecast for the time frame at ``start``."""
+        period = time_of_day(start)
+        end = frame_end(start)
         prompt = (
             f"You have just greeted the user with '{GREETINGS[period]}'. Do not greet "
-            f"them again. It is {now:%A} {period}.\n"
-            "Here is the weather as JSON:\n"
+            f"them again. This is for {start:%A} {period}.\n"
+            f"Here is the forecast for the {period} ({start:%H:%M} to {end:%H:%M}) as "
+            "JSON; temperature is at the start, high and low are for the whole period:\n"
             f"{json.dumps(weather.as_dict())}\n"
             f"Give the weather for the {period} in ONE short spoken sentence of at "
             "most 25 words: the conditions, the high and low, and the chance of rain. "

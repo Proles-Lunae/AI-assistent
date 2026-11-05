@@ -263,17 +263,45 @@ def test_detect_location_falls_back_to_second_service(monkeypatch):
     assert weather.detect_location() == (48.14, 11.58, "Munich")
 
 
+def hourly_forecast(start, hours, temps, codes, rain):
+    from datetime import timedelta
+
+    return {
+        "time": [(start + timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M") for h in range(hours)],
+        "temperature_2m": temps,
+        "apparent_temperature": [t - 2 for t in temps],
+        "weather_code": codes,
+        "precipitation_probability": rain,
+        "wind_speed_10m": [10] * hours,
+    }
+
+
 def test_empty_city_uses_detected_location(monkeypatch):
     from assistant import weather
 
     calls = []
     monkeypatch.setattr(weather, "detect_location", lambda: calls.append("auto") or (1.0, 2.0, "Here"))
     monkeypatch.setattr(weather, "find_city", lambda c: calls.append(c) or (1.0, 2.0, c))
-    forecast = {
-        "current": {"temperature_2m": 5, "apparent_temperature": 3, "weather_code": 3, "wind_speed_10m": 9},
-        "daily": {"temperature_2m_max": [7], "temperature_2m_min": [1], "precipitation_probability_max": [20]},
-    }
+    now = datetime.now().replace(minute=0, second=0, microsecond=0)
+    forecast = {"hourly": hourly_forecast(now, 12, [5] * 12, [3] * 12, [20] * 12)}
     monkeypatch.setattr(weather, "_get_json", lambda url, params: forecast)
     assert weather.get_weather("").city == "Here"
     assert weather.get_weather("Hamburg").city == "Hamburg"
     assert calls == ["auto", "Hamburg"]
+
+
+def test_forecast_covers_only_the_time_frame():
+    from assistant.weather import summarise_hours
+
+    day = datetime(2026, 1, 2, 0)
+    # 24 hours: cold and clear at night, warm and rainy 11am-6pm.
+    temps = [2] * 11 + [9, 10, 12, 13, 12, 11, 10] + [4] * 6
+    codes = [0] * 11 + [61] * 7 + [0] * 6
+    rain = [0] * 11 + [80, 90, 70, 60, 50, 40, 30] + [0] * 6
+    hourly = hourly_forecast(day, 24, temps, codes, rain)
+    afternoon = summarise_hours(hourly, datetime(2026, 1, 2, 11), datetime(2026, 1, 2, 18))
+    assert afternoon["description"] == "light rain"
+    assert (afternoon["high"], afternoon["low"], afternoon["rain_chance"]) == (13, 9, 90)
+    assert afternoon["temperature"] == 9  # at the start of the frame
+    evening = summarise_hours(hourly, datetime(2026, 1, 2, 18), datetime(2026, 1, 3, 3))
+    assert evening["description"] == "clear sky" and evening["rain_chance"] == 0
