@@ -5,6 +5,10 @@
 name = "sir"              # what she calls you: "Guten Abend, Sir."
 language = "de"           # the language she speaks and understands: "de" or "en"
 
+[assistant]
+name = ""                 # her name, shown in the circle in her window, e.g. "Eva";
+                          # "" = "Assistentin" (German) or "Assistant" (English)
+
 [weather]
 city = ""                 # "" = find your location automatically, or a city like "Berlin"
 units = "metric"          # "metric" (°C) or "imperial" (°F)

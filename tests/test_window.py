@@ -455,3 +455,102 @@ def test_minimized_start_stays_in_the_tray(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "argv", ["assistant", "--config", str(config), "--minimized"])
     main.main()
     assert calls == [True]
+
+
+# -- Her name, and the new look ----------------------------------------------------
+
+def test_the_circle_shows_her_name(app):
+    from assistant.window import Window
+
+    w = Window(DE)
+    w.tray = None
+    assert w.orb.name == "Assistentin" and w.windowTitle() == "Assistentin"  # the default
+    w.deleteLater()
+    w = Window(DE, name="Eva")
+    w.tray = None
+    assert w.orb.name == "Eva" and w.windowTitle() == "Eva"
+    assert not w.orb.grab().isNull()
+    w.deleteLater()
+
+
+def test_long_names_wrap_before_they_are_cut_short(app):
+    from assistant.window import fit_name
+
+    short, font = fit_name("Eva", 120, 80)
+    assert short == "Eva" and font.pixelSize() == 21
+    wrapped, font = fit_name("Mein persönlicher Assistent", 120, 80)
+    assert wrapped == "Mein persönlicher Assistent" and font.pixelSize() < 21  # two lines, smaller
+    cut, font = fit_name("Supercalifragilisticexpialigetisch", 120, 80)
+    assert cut.endswith("…") and font.pixelSize() == 12
+
+
+def test_her_name_comes_from_the_settings():
+    from assistant import main
+    from assistant.config import AssistantSettings
+
+    assert AssistantSettings().display_name("Assistentin") == "Assistentin"
+    assert AssistantSettings(name="  Eva  ").display_name("Assistentin") == "Eva"
+    config = Config()
+    config.assistant.name = "Eva"
+    a = main.Assistant(config)
+    assert a.name == "Eva" and a.context().startswith("Your name is Eva. It is ")
+    assert main.Assistant(Config()).name == "Assistentin"
+
+
+def test_name_setting_is_read_from_the_file(tmp_path):
+    from assistant.config import load_config
+
+    path = tmp_path / "config.toml"
+    path.write_text('[assistant]\nname = "Eva"\n', encoding="utf-8")
+    assert load_config(path).assistant.name == "Eva"
+
+
+def test_thinking_shows_moving_dots_until_she_answers(window):
+    from assistant.window import ThinkingDots
+
+    window.on_event("state", {"state": "thinking"})
+    assert window.chat.dots is not None
+    window.on_event("heard", {"text": "Wie spät ist es?"})  # your bubble goes above the dots
+    assert window.chat.column.indexOf(window.chat.dots) == window.chat.column.count() - 2
+    assert len(window.chat.widget().findChildren(ThinkingDots)) == 1
+    window.on_event("said", {"text": "Es ist acht Uhr."})
+    assert window.chat.dots is None
+    assert bubbles(window) == [("you", "Wie spät ist es?"), ("her", "Es ist acht Uhr.")]
+    window.on_event("state", {"state": "thinking"})
+    window.on_event("state", {"state": "waiting"})  # ended without an answer
+    assert window.chat.dots is None
+
+
+def test_a_state_change_sends_a_ring_outwards(window):
+    orb = window.orb
+    orb.set_state("waiting")
+    assert orb.ripple == 1.0
+    orb.set_state("waiting")  # the same state again: no new ring
+    orb._tick()
+    assert 0 < orb.ripple < 1.0
+
+
+def test_weather_pill_appears_when_the_weather_is_known(window):
+    assert window.weather.isHidden()
+    window.on_event("weather", {"temperature": 21, "unit": "°C", "city": ""})
+    assert not window.weather.isHidden() and window.weather.text() == "21°C"
+
+
+def test_talk_button_changes_its_look_with_her_state(talk_window):
+    w, _ = talk_window
+    w.on_event("state", {"state": "waiting"})
+    assert w.talk.property("ending") is False and w.talk.sizeHint().width() >= 180
+    w.on_event("state", {"state": "listening"})
+    assert w.talk.property("ending") is True
+    w.talk.grab()  # drawing the button in each state works
+    w.on_event("state", {"state": "problem"})
+    assert not w.talk.isEnabled() and not w.talk.grab().isNull()
+
+
+def test_notes_fade_away_after_a_while(window):
+    window.on_event("note", {"text": "Kurz mal was"})
+    assert window.note.text() == "Kurz mal was" and window.note_timer.isActive()
+    window._hide_note()
+    window.note_fade.animation.setCurrentTime(window.note_fade.animation.duration())  # finished
+    QtWidgets.QApplication.processEvents()
+    assert window.note.text() == ""

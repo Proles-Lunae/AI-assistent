@@ -38,6 +38,7 @@ class Assistant:
         self.talk_request = threading.Event()  # the window's Talk button
         self.stop_request = threading.Event()  # the window's "end conversation" button
         self.words = phrases_for(config.user.language)  # everything she says, in her language
+        self.name = config.assistant.display_name(self.words.app_title)  # shown in her window
         self.speaker = Speaker(config.voice, self.words.code, self.words.voice)
         self.speaker.on_speak = self._speaking
         self._ready: dict[str, Speech] = {}  # greetings and the no-weather line, by text
@@ -177,7 +178,7 @@ class Assistant:
     def context(self) -> str:
         """What Claude should know: the date and time, and where you are."""
         now = datetime.now()
-        text = f"It is {now:%A %d %B %Y}, {now:%H:%M}"
+        text = f"Your name is {self.name}. It is {now:%A %d %B %Y}, {now:%H:%M}"
         try:
             city = self.config.weather.city.strip()
             text += f", in {city or detect_location()[2]}"

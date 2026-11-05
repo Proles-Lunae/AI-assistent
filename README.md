@@ -56,7 +56,9 @@ model (about 480 MB).
 3. Make sure Claude Code is logged in. Run `claude` once and follow the login steps.
 
 4. Optional: copy `config.example.toml` to `config.toml` to change settings. She
-   calls you "sir" by default; set `name` under `[user]` to change that. The
+   calls you "sir" by default; set `name` under `[user]` to change that. To give
+   her a name of her own (shown in the circle in her window, and she knows it
+   when you ask), set `name` under `[assistant]`, e.g. `name = "Eva"`. The
    weather is for your location, worked out automatically from your internet
    connection (roughly your city; with a VPN on, the VPN's location). To use a
    specific place instead, set `city` under `[weather]`, e.g. `city = "Berlin"`.
@@ -72,12 +74,14 @@ python -m assistant --shortcut
 Then double-click **Assistentin** on your desktop to start her, with no Command
 Prompt. She opens in her own window:
 
-- **The orb** shows what she's doing: teal and slowly breathing while she waits
-  for claps, bright cyan while she listens (it reacts to your voice), violet with
-  a turning ring while she thinks, gold while she speaks, and red if something's
-  wrong (the reason is shown underneath).
-- **The conversation** appears below it as chat bubbles, with the temperature and
-  your town at the top.
+- **The circle** carries her name and shows what she's doing: teal and slowly
+  breathing while she waits for claps, bright cyan while she listens (it swells
+  with your voice), violet with turning arcs while she thinks, gold with waves
+  while she speaks, and red if something's wrong (the reason is shown underneath).
+  A ring runs outwards whenever her state changes, and a single clap makes it flash.
+- **The conversation** appears below it as chat bubbles that slide in: hers on the
+  left, yours on the right, three moving dots while she's thinking of an answer.
+  The temperature and your town sit in the top corner once they're known.
 - **Sprechen** (or the space bar) starts a conversation without clapping: she
   beeps and listens straight away, no greeting. While you're talking with her the
   button says **Gespräch beenden**, to end the conversation with a click (she

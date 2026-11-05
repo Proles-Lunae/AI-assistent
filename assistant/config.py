@@ -23,6 +23,17 @@ class UserSettings:
 
 
 @dataclass
+class AssistantSettings:
+    # Her name: shown in the circle in her window, in the window's title and
+    # the tray icon, and Claude is told it, so she knows it when you ask.
+    # "" = the usual title in her language ("Assistentin" / "Assistant").
+    name: str = ""
+
+    def display_name(self, fallback: str = "Assistant") -> str:
+        return " ".join(self.name.split()) or fallback
+
+
+@dataclass
 class WeatherSettings:
     city: str = ""  # Empty = detect your location automatically.
     units: str = "metric"  # "metric" (°C, km/h) or "imperial" (°F, mph)
@@ -93,6 +104,7 @@ class BrainSettings:
 @dataclass
 class Config:
     user: UserSettings = field(default_factory=UserSettings)
+    assistant: AssistantSettings = field(default_factory=AssistantSettings)
     weather: WeatherSettings = field(default_factory=WeatherSettings)
     voice: VoiceSettings = field(default_factory=VoiceSettings)
     clap: ClapSettings = field(default_factory=ClapSettings)
