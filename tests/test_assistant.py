@@ -3,9 +3,9 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from assistant.brain import frame_start, standard_greeting, time_of_day
 from assistant.clap_detector import DoubleClapDetector
 from assistant.config import ClapSettings, load_config
+from assistant.timeframes import frame_end, frame_start, standard_greeting, time_of_day
 from assistant.voice import pick_british_female
 from assistant.weather import WeatherReport
 
@@ -169,6 +169,7 @@ def test_weather_uses_certifi_certificates():
 def test_certificate_error_gets_a_clear_message(monkeypatch):
     import ssl
     import urllib.error
+    import urllib.request
 
     import pytest
 
@@ -179,7 +180,7 @@ def test_certificate_error_gets_a_clear_message(monkeypatch):
         err.verify_message = "certificate has expired"
         raise urllib.error.URLError(err)
 
-    monkeypatch.setattr(weather.urllib.request, "urlopen", fail)
+    monkeypatch.setattr(urllib.request, "urlopen", fail)
     with pytest.raises(ConnectionError, match="date and time"):
         weather.find_city("London")
 
@@ -195,7 +196,7 @@ WINDOWS_DEVICES = [
 
 
 def pick(device, default_hostapi=0):
-    from assistant.clap_detector import input_device
+    from assistant.microphone import input_device
 
     return input_device(ClapSettings(device=device), WINDOWS_DEVICES, default_hostapi)
 
@@ -413,3 +414,285 @@ def test_clap_after_claude_is_ready_plays_claudes_version(monkeypatch):
         assert played == [played[0]] and played[0].endswith("sir. Claude's forecast.")
     finally:
         a.cache.stop()
+
+
+def test_frame_end():
+    assert frame_end(datetime(2026, 1, 2, 3)) == datetime(2026, 1, 2, 11)
+    assert frame_end(datetime(2026, 1, 2, 11)) == datetime(2026, 1, 2, 18)
+    assert frame_end(datetime(2026, 1, 2, 18)) == datetime(2026, 1, 3, 3)
+    # Asked at any time in a frame, also after midnight.
+    assert frame_end(datetime(2026, 1, 2, 15, 30)) == datetime(2026, 1, 2, 18)
+    assert frame_end(datetime(2026, 1, 3, 1)) == datetime(2026, 1, 3, 3)
+
+
+def test_pick_british_female_falls_back_in_order():
+    us_female = SimpleNamespace(id="us-zira", name="Zira", languages=["en_US"], gender="female")
+    gb_male = SimpleNamespace(id="gb-george", name="George", languages=[b"\x05en-gb"])
+    us_male = SimpleNamespace(id="us-david", name="David", languages=["en_US"], gender="male")
+    assert pick_british_female([us_female, gb_male]) is gb_male  # British beats female
+    assert pick_british_female([us_male, us_female]) is us_female
+    assert pick_british_female([us_male]) is None
+    assert pick_british_female([]) is None
+
+
+def test_claude_gets_the_prompt_through_stdin_with_the_full_path(monkeypatch):
+    from assistant import brain
+    from assistant.config import BrainSettings
+
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return SimpleNamespace(returncode=0, stdout="Rainy, high of 13. Umbrella!\n", stderr="")
+
+    monkeypatch.setattr(brain.shutil, "which", lambda c: r"C:\Users\me\claude.cmd")
+    monkeypatch.setattr(brain.subprocess, "run", fake_run)
+    report = WeatherReport("Berlin", "light rain", 8, 6, 10, 5, 70, 18, "°C", "km/h")
+    claude = brain.ClaudeBrain(BrainSettings(model="sonnet"))
+    assert claude.weather_briefing(report, datetime(2026, 1, 2, 18)) == "Rainy, high of 13."
+    cmd, kwargs = calls[0]
+    assert cmd[:2] == [r"C:\Users\me\claude.cmd", "-p"] and cmd[-2:] == ["--model", "sonnet"]
+    assert "Good evening" in kwargs["input"] and "18:00 to 03:00" in kwargs["input"]
+    assert kwargs["input"] not in cmd  # the prompt is not a command-line argument
+
+
+def test_briefing_fallbacks(monkeypatch):
+    from assistant.brain import BrainError
+    from assistant.main import NO_WEATHER
+
+    a, _ = make_assistant(monkeypatch)
+    evening = datetime(2026, 1, 2, 18)
+    full = a.build_briefing(evening)
+    assert full.complete and full.speech.text == "Good evening, sir. Claude's forecast."
+    quick = a.build_briefing(evening, quick=True)
+    assert not quick.complete and "light rain" in quick.speech.text
+
+    def no_claude(weather, start):
+        raise BrainError("offline")
+
+    a.brain.weather_briefing = no_claude
+    simple = a.build_briefing(evening)
+    assert simple.complete and "this evening expect light rain" in simple.speech.text
+
+    def no_weather(*args):
+        raise ConnectionError("offline")
+
+    from assistant import main
+
+    monkeypatch.setattr(main, "get_weather", no_weather)
+    for briefing in (a.build_briefing(evening), a.build_briefing(evening, quick=True)):
+        assert not briefing.complete
+        assert briefing.speech.text == f"Good evening, sir. {NO_WEATHER}"
+
+
+def test_config_values_get_the_expected_types(tmp_path, capsys):
+    path = tmp_path / "config.toml"
+    path.write_text('[clap]\ndevice = 2\nmin_gap = 1\nsample_rate = 48000\nloudness = 3\n[nope]\n')
+    config = load_config(path)
+    assert config.clap.device == "2" and config.clap.min_gap == 1.0
+    assert isinstance(config.clap.min_gap, float) and config.clap.sample_rate == 48000
+    out = capsys.readouterr().out
+    assert "unknown setting 'loudness'" in out and "unknown section [nope]" in out
+
+
+def test_certificate_list_is_loaded_only_once():
+    from assistant.weather import ssl_context
+
+    assert ssl_context() is ssl_context()
+
+
+def test_every_time_frame_has_its_own_greeting():
+    assert standard_greeting("afternoon", "sir") == "Good afternoon, sir."
+    assert [time_of_day(datetime(2026, 1, 2, h)) for h in (3, 11, 18)] == [
+        "morning", "afternoon", "evening"]
+
+
+def test_unknown_device_is_a_settings_mistake():
+    import pytest
+
+    from assistant.config import ConfigError
+
+    with pytest.raises(ConfigError):
+        pick("Blue Yeti")
+
+
+class FakeMicrophone:
+    """Stands in for sounddevice: feeds generated blocks to the callback in real time."""
+
+    def __init__(self, blocks=()):
+        self.blocks = list(blocks)
+        self.default = SimpleNamespace(device=(0, 0), hostapi=0)
+
+    def query_devices(self, device=None, kind=None):
+        if device is None and kind is None:
+            return WINDOWS_DEVICES
+        return {"name": "Fake microphone"}
+
+    def InputStream(self, callback, **settings):
+        import threading
+
+        print("(stream opened)")
+        blocks, stop = self.blocks, threading.Event()
+
+        def feed():
+            for block in blocks:
+                if stop.wait(BLOCK_SECONDS):
+                    return
+                callback(block.reshape(-1, 1), len(block), None, None)
+
+        class Stream:
+            def __enter__(self):
+                threading.Thread(target=feed, daemon=True).start()
+                return self
+
+            def __exit__(self, *exc):
+                stop.set()
+
+        return Stream()
+
+
+def blocks_for(pattern):
+    rng = np.random.default_rng(0)
+    return [clap(rng) if ch == "c" else quiet(rng) for ch in pattern]
+
+
+def test_listening_to_the_microphone_wakes_on_a_double_clap(monkeypatch, capsys):
+    import sys
+    import threading
+
+    from assistant import microphone
+
+    pattern = gap(0.25) + "c" + gap(0.3) + "c" + gap(1)
+    monkeypatch.setitem(sys.modules, "sounddevice", FakeMicrophone(blocks_for(pattern)))
+    woken = threading.Event()
+
+    class Stop(Exception):
+        pass
+
+    def on_double_clap():
+        woken.set()
+        raise Stop  # stop listening
+
+    def listen():  # on a thread, so a missed double clap fails the test instead of hanging it
+        try:
+            microphone.listen(ClapSettings(), on_double_clap)
+        except Stop:
+            pass
+
+    threading.Thread(target=listen, daemon=True).start()
+    assert woken.wait(timeout=5)
+    out = capsys.readouterr().out
+    assert "Using microphone: Fake microphone" in out
+    assert out.count("clap heard (loudness ") == 1 and "clap once more..." in out
+
+
+def test_levels_explains_before_the_microphone_opens(monkeypatch, capsys):
+    import sys
+
+    from assistant import microphone
+
+    pattern = gap(0.1) + "c" + gap(0.3) + "c" + gap(5)  # sound for longer than it listens
+    monkeypatch.setitem(sys.modules, "sounddevice", FakeMicrophone(blocks_for(pattern)))
+    microphone.show_levels(ClapSettings(), seconds=1)
+    out = capsys.readouterr().out
+    opened = out.index("(stream opened)")
+    for line in ("Using microphone: Fake microphone", "Showing loudness", "A clap must reach 0.2"):
+        assert out.index(line) < opened
+    assert "DOUBLE CLAP" in out and "Loudest sound" in out
+
+
+def run_main(monkeypatch, *args):
+    import sys
+
+    from assistant import main
+
+    monkeypatch.setattr(sys, "argv", ["assistant", *args])
+    main.main()  # must not raise: problems are explained in plain words
+
+
+def test_config_mistake_is_explained_without_a_traceback(tmp_path, monkeypatch, capsys):
+    path = tmp_path / "config.toml"
+    path.write_text("[user]\nname = Luca\n")
+    run_main(monkeypatch, "--config", str(path), "--devices")
+    assert "Text values need quotes" in capsys.readouterr().out
+
+
+def test_unknown_microphone_is_explained_without_a_traceback(tmp_path, monkeypatch, capsys):
+    import sys
+
+    path = tmp_path / "config.toml"
+    path.write_text('[clap]\ndevice = "Blue Yeti"\n')
+    monkeypatch.setitem(sys.modules, "sounddevice", FakeMicrophone())
+    run_main(monkeypatch, "--config", str(path), "--levels")
+    out = capsys.readouterr().out
+    assert "No microphone matches 'Blue Yeti'" in out and "--devices" in out
+
+
+def test_ctrl_c_while_loading_settings_says_goodbye(monkeypatch, capsys):
+    from assistant import main
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(main, "load_config", interrupted)
+    run_main(monkeypatch, "--now")
+    assert "Goodbye!" in capsys.readouterr().out
+
+
+STAND_IN_CLAUDE = """\
+import json, os, sys
+with open(os.environ["STAND_IN_LOG"], "w", encoding="utf-8") as log:
+    json.dump({"argv": sys.argv, "stdin": sys.stdin.read()}, log)
+if os.environ.get("STAND_IN_FAIL"):
+    print("Not logged in", file=sys.stderr)
+    sys.exit(1)
+print("Mild and dry this evening. Enjoy it!")
+"""
+
+
+def stand_in_claude(tmp_path, monkeypatch):
+    """A small script named 'claude' on the PATH, that notes how it was called."""
+    import json
+    import os
+    import sys
+
+    import pytest
+
+    if os.name == "nt":
+        pytest.skip("the stand-in is a script with a #! line")
+    script = tmp_path / "claude"
+    script.write_text(f"#!{sys.executable}\n{STAND_IN_CLAUDE}")
+    script.chmod(0o755)
+    log = tmp_path / "call.json"
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}")
+    monkeypatch.setenv("STAND_IN_LOG", str(log))
+    return script, lambda: json.loads(log.read_text(encoding="utf-8"))
+
+
+def test_stand_in_claude_gets_the_prompt_through_stdin(tmp_path, monkeypatch):
+    from assistant.brain import ClaudeBrain
+    from assistant.config import BrainSettings
+
+    script, call = stand_in_claude(tmp_path, monkeypatch)
+    report = WeatherReport("Berlin", "fog", 6, 4, 8, 3, 10, 5, "°C", "km/h")
+    answer = ClaudeBrain(BrainSettings()).weather_briefing(report, datetime(2026, 1, 2, 18))
+    assert answer == "Mild and dry this evening."
+    argv, prompt = call()["argv"], call()["stdin"]
+    assert argv[0] == str(script)  # the full path, as found by shutil.which
+    assert argv[argv.index("--tools") + 1] == ""  # no tools: it only has to talk
+    assert "--bare" not in argv and "--model" not in argv  # Claude login, default model
+    assert "--strict-mcp-config" in argv and "--disable-slash-commands" in argv
+    assert "Good evening" in prompt and '"city": "Berlin"' in prompt and "18:00 to 03:00" in prompt
+    assert prompt not in argv  # the prompt is not a command-line argument
+
+
+def test_stand_in_claude_failing_is_reported(tmp_path, monkeypatch):
+    import pytest
+
+    from assistant.brain import BrainError, ClaudeBrain
+    from assistant.config import BrainSettings
+
+    stand_in_claude(tmp_path, monkeypatch)
+    monkeypatch.setenv("STAND_IN_FAIL", "1")
+    with pytest.raises(BrainError, match="exit 1.*Not logged in"):
+        ClaudeBrain(BrainSettings()).ask("Hi")

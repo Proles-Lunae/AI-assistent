@@ -15,14 +15,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
 
-from .brain import frame_end, frame_start
+from .timeframes import frame_end, frame_start
 from .voice import Speech
 
 
 @dataclass
 class Briefing:
     speech: Speech  # greeting and forecast together, ready to play
-    weather_text: str  # the forecast on its own
     frame: datetime  # start of the time frame it's for
     made_at: float  # time.monotonic() when it was made
     complete: bool  # False if it's a stand-in (quick version, or no weather): remade soon
@@ -32,22 +31,21 @@ class BriefingCache:
     """Holds the briefings for the current and the next time frame.
 
     ``build(frame_start)`` makes one briefing. One made without weather
-    (service unreachable) is remade after ``incomplete_max_age`` seconds, but
+    (service unreachable) is remade after ``INCOMPLETE_MAX_AGE`` seconds, but
     keeps being played until the new one is ready, so a clap never waits.
     """
+
+    LEAD = 30 * 60  # make the next frame's briefing this many seconds early
+    INCOMPLETE_MAX_AGE = 120.0
 
     def __init__(
         self,
         build: Callable[[datetime], Briefing],
-        lead: float = 30 * 60,
-        incomplete_max_age: float = 120.0,
         retry_delay: float = 30.0,
         clock: Callable[[], float] = time.monotonic,
         now: Callable[[], datetime] = datetime.now,
     ):
         self.build = build
-        self.lead = lead  # make the next frame's briefing this many seconds early
-        self.incomplete_max_age = incomplete_max_age
         self.retry_delay = retry_delay
         self.clock = clock
         self.now = now
@@ -57,21 +55,19 @@ class BriefingCache:
         self._thread: threading.Thread | None = None
 
     def usable(self, briefing: Briefing) -> bool:
-        return briefing.complete or self.clock() - briefing.made_at < self.incomplete_max_age
+        return briefing.complete or self.clock() - briefing.made_at < self.INCOMPLETE_MAX_AGE
 
     def wanted_frames(self) -> list[datetime]:
         """The current frame, plus the next one if it starts soon."""
         now = self.now()
         current = frame_start(now)
         upcoming = frame_end(current)
-        if (upcoming - now).total_seconds() <= self.lead:
-            return [current, upcoming]
-        return [current]
+        return [current, upcoming] if (upcoming - now).total_seconds() <= self.LEAD else [current]
 
     def next_to_build(self) -> datetime | None:
         frames = self.wanted_frames()
-        for old in [f for f in self._ready if f < frames[0]]:
-            del self._ready[old]  # frames that are over
+        # Forget frames that are over.
+        self._ready = {f: b for f, b in self._ready.items() if f >= frames[0]}
         for frame in frames:
             briefing = self._ready.get(frame)
             if briefing is None or not self.usable(briefing):
@@ -96,15 +92,13 @@ class BriefingCache:
         """The current frame's briefing, waiting up to ``timeout`` seconds for it."""
         deadline = time.monotonic() + timeout
         with self._cond:
-            while True:
-                briefing = self._ready.get(frame_start(self.now()))
-                if briefing is not None:
-                    return briefing
+            while (briefing := self._ready.get(frame_start(self.now()))) is None:
                 self._cond.notify_all()  # make sure the worker is on it
                 remaining = deadline - time.monotonic()
                 if remaining <= 0 or self._stopped:
                     return None
                 self._cond.wait(timeout=remaining)
+            return briefing
 
     def _worker(self) -> None:
         while True:
@@ -124,5 +118,5 @@ class BriefingCache:
                 if briefing is not None:
                     self._ready[frame] = briefing
                     self._cond.notify_all()
-                elif not self._stopped:
+                elif not self._stopped:  # try again a little later
                     self._cond.wait(timeout=self.retry_delay)

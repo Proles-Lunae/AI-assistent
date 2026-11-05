@@ -7,13 +7,15 @@ If that fails, falls back to the voices built into your computer via
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from typing import Any
 
 from .config import VoiceSettings
 
 SAMPLE_RATE = 24000
+# Words that mark an offline voice as British, or as female.
+BRITISH_HINTS = ("en_gb", "en-gb", "united kingdom", "british")
+FEMALE_HINTS = ("hazel", "susan", "kate", "serena", "libby", "sonia", "female")
 
 
 @dataclass
@@ -56,34 +58,24 @@ class Speaker:
                 print(f"(Couldn't play audio: {exc}. Trying the offline voice.)")
         self._say_offline(speech.text)
 
-    def synthesize(self, text: str) -> bytes:
-        """Turn text into MP3 bytes with the neural voice."""
-        import edge_tts
-
-        async def run() -> bytes:
-            communicate = edge_tts.Communicate(text, self.s.voice, rate=self.s.rate)
-            audio = bytearray()
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    audio.extend(chunk["data"])
-            return bytes(audio)
-
-        audio = asyncio.run(run())
-        if not audio:
-            raise RuntimeError("the voice service returned no audio")
-        return audio
-
     def _render(self, text: str):
-        """Make the neural-voice audio and decode it, ready for the speakers."""
+        """Make the neural-voice audio (MP3) and decode it, ready for the speakers."""
+        import asyncio
+
+        import edge_tts
         import miniaudio
         import numpy as np
 
-        mp3 = self.synthesize(text)
+        async def download() -> bytes:
+            communicate = edge_tts.Communicate(text, self.s.voice, rate=self.s.rate)
+            chunks = [c["data"] async for c in communicate.stream() if c["type"] == "audio"]
+            return b"".join(chunks)
+
+        mp3 = asyncio.run(download())
+        if not mp3:
+            raise RuntimeError("the voice service returned no audio")
         decoded = miniaudio.decode(
-            mp3,
-            output_format=miniaudio.SampleFormat.SIGNED16,
-            nchannels=1,
-            sample_rate=SAMPLE_RATE,
+            mp3, output_format=miniaudio.SampleFormat.SIGNED16, nchannels=1, sample_rate=SAMPLE_RATE
         )
         return np.frombuffer(decoded.samples, dtype=np.int16)
 
@@ -102,25 +94,18 @@ class Speaker:
 
 
 def pick_british_female(voices):
-    """Choose the best match for a British female voice from pyttsx3's list."""
-    female_names = ("hazel", "susan", "kate", "serena", "libby", "sonia", "female")
+    """Choose the best match for a British female voice from pyttsx3's list.
 
-    def describe(v) -> str:
+    British and female beats British only, which beats female only; None if neither.
+    """
+
+    def score(v) -> tuple[bool, bool]:
         langs = " ".join(
             l.decode(errors="ignore") if isinstance(l, bytes) else str(l)
             for l in (getattr(v, "languages", None) or [])
         )
-        return f"{v.id} {v.name} {langs} {getattr(v, 'gender', '')}".lower()
+        d = f"{v.id} {v.name} {langs} {getattr(v, 'gender', '')}".lower()
+        return any(k in d for k in BRITISH_HINTS), any(k in d for k in FEMALE_HINTS)
 
-    def is_british(d: str) -> bool:
-        return any(k in d for k in ("en_gb", "en-gb", "united kingdom", "british"))
-
-    def is_female(d: str) -> bool:
-        return any(k in d for k in female_names)
-
-    described = [(v, describe(v)) for v in voices]
-    for test in (lambda d: is_british(d) and is_female(d), is_british, is_female):
-        for v, d in described:
-            if test(d):
-                return v
-    return None
+    best = max(voices, key=score, default=None)  # the first of the best
+    return best if best is not None and any(score(best)) else None

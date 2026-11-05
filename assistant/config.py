@@ -6,18 +6,15 @@ Defaults live here. To change them, copy ``config.example.toml`` to
 
 from __future__ import annotations
 
-import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config.toml"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.toml"
 
 
 @dataclass
 class UserSettings:
-    # What the assistant calls you, e.g. "Good morning, sir." Empty = "sir".
-    name: str = "sir"
+    name: str = "sir"  # What she calls you: "Good morning, sir."
 
     def address(self) -> str:
         return self.name.strip() or "sir"
@@ -31,14 +28,13 @@ class WeatherSettings:
 
 @dataclass
 class VoiceSettings:
-    # Microsoft neural voices: en-GB-SoniaNeural, en-GB-LibbyNeural, en-GB-MaisieNeural
-    voice: str = "en-GB-SoniaNeural"
+    voice: str = "en-GB-SoniaNeural"  # or en-GB-LibbyNeural, en-GB-MaisieNeural
     rate: str = "+0%"  # Speaking speed, e.g. "-10%" or "+15%"
 
 
 @dataclass
 class ClapSettings:
-    # Microphone: "" = Windows' default, or a number / part of a name
+    # Microphone: "" = the default one, or a number / part of a name
     # from: python -m assistant --devices
     device: str = ""
     # Loudness (0.0-1.0) a sound must reach to count as a clap.
@@ -59,45 +55,26 @@ class ClapSettings:
 
 @dataclass
 class BrainSettings:
-    # Path or name of the Claude Code command (uses your Claude login).
-    command: str = "claude"
+    command: str = "claude"  # The Claude Code command (uses your Claude login).
     model: str = ""  # Empty = Claude Code's default model.
     timeout: float = 60.0
 
 
 @dataclass
 class BriefingSettings:
-    # Prepare the weather briefing in the background, once per time frame
-    # (morning 3am-11am, afternoon 11am-6pm, evening 6pm-3am), so it plays
-    # the moment you clap.
+    # Prepare greeting + weather in the background, once per time frame,
+    # so it plays the moment you clap.
     prepare_ahead: bool = True
 
 
 @dataclass
 class Config:
-    briefing: BriefingSettings = field(default_factory=BriefingSettings)
     user: UserSettings = field(default_factory=UserSettings)
     weather: WeatherSettings = field(default_factory=WeatherSettings)
     voice: VoiceSettings = field(default_factory=VoiceSettings)
     clap: ClapSettings = field(default_factory=ClapSettings)
     brain: BrainSettings = field(default_factory=BrainSettings)
-
-
-def _apply(section: object, values: dict) -> None:
-    known = {f.name: f for f in fields(section)}
-    for key, value in values.items():
-        key = key.lower()
-        if key not in known:
-            # Warn rather than crash, so old config files keep working.
-            print(f"(Ignoring unknown setting '{key}' in config.toml)")
-            continue
-        current = getattr(section, key)
-        # Allow ints in the file where floats are expected (e.g. cooldown = 3).
-        if isinstance(current, float) and isinstance(value, int):
-            value = float(value)
-        elif isinstance(current, str) and not isinstance(value, str):
-            value = str(value)
-        setattr(section, key, value)
+    briefing: BriefingSettings = field(default_factory=BriefingSettings)
 
 
 class ConfigError(ValueError):
@@ -115,28 +92,40 @@ def load_config(path: Path | None = None, report: bool = False) -> Config:
     if not path.exists():
         if report:
             print(f"No settings file found at {path}, using the default settings.")
-            hidden_txt = path.with_name(path.name + ".txt")
-            if hidden_txt.exists():
+            hidden = path.with_name(path.name + ".txt")
+            if hidden.exists():
                 print(
-                    f"  Found {hidden_txt.name} instead: Windows added '.txt' to the name. "
-                    f"Rename it with:  ren {hidden_txt.name} {path.name}"
+                    f"  Found {hidden.name} instead: Windows added '.txt' to the name. "
+                    f"Rename it with:  ren {hidden.name} {path.name}"
                 )
         return config
-    # "utf-8-sig" also accepts the invisible marker (BOM) some editors add.
-    text = path.read_text(encoding="utf-8-sig")
+    import tomllib  # here, not at the top: only needed when there's a file to read
+
     try:
-        data = tomllib.loads(text)
+        # "utf-8-sig" also accepts the invisible marker (BOM) some editors add.
+        data = tomllib.loads(path.read_text(encoding="utf-8-sig"))
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(
             f"There's a mistake in {path}: {exc}.\n"
             'Text values need quotes, e.g.  name = "sir"  and  city = "Berlin"'
         ) from exc
+    # Unknown names only get a warning, so old config files keep working.
     for section_name, values in data.items():
         section = getattr(config, section_name.lower(), None)
         if section is None or not isinstance(values, dict):
             print(f"(Ignoring unknown section [{section_name}] in config.toml)")
             continue
-        _apply(section, values)
+        known = {f.name for f in fields(section)}
+        for key, value in values.items():
+            key = key.lower()
+            if key not in known:
+                print(f"(Ignoring unknown setting '{key}' in config.toml)")
+                continue
+            current = getattr(section, key)
+            # Accept e.g. cooldown = 3 for 3.0, and device = 2 for "2".
+            if isinstance(current, str) or (isinstance(current, float) and isinstance(value, int)):
+                value = type(current)(value)
+            setattr(section, key, value)
     if report:
         print(f"Settings loaded from {path}")
     return config

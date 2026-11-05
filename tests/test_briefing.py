@@ -27,7 +27,7 @@ def make_cache(now, clock=None, complete=True, fail_times=0):
             built.append("fail")
             raise RuntimeError("network down")
         built.append(frame)
-        return Briefing(Speech(f"briefing for {frame:%H}"), "forecast", frame, clock(), complete)
+        return Briefing(Speech(f"briefing for {frame:%H}"), frame, clock(), complete)
 
     cache = BriefingCache(build, clock=clock, now=now, retry_delay=0.01)
     return cache, built
@@ -87,7 +87,7 @@ def test_frame_change_plays_the_ready_next_briefing_without_waiting():
 def test_finished_frames_are_forgotten():
     now = Fake(datetime(2026, 1, 2, 12))
     cache, _ = make_cache(now)
-    cache._ready[MORNING] = Briefing(Speech("old"), "", MORNING, 0, True)
+    cache._ready[MORNING] = Briefing(Speech("old"), MORNING, 0, True)
     assert cache.next_to_build() == AFTERNOON
     assert MORNING not in cache._ready
     assert cache.take(timeout=0) is None
@@ -97,7 +97,7 @@ def test_briefing_without_weather_is_remade_soon():
     clock = Fake(0.0)
     now = Fake(datetime(2026, 1, 2, 8))
     cache, _ = make_cache(now, clock=clock)
-    b = Briefing(Speech("no weather"), "", MORNING, made_at=0, complete=False)
+    b = Briefing(Speech("no weather"), MORNING, made_at=0, complete=False)
     cache._ready[MORNING] = b
     clock.value = 100
     assert cache.usable(b) and cache.next_to_build() is None
@@ -129,7 +129,7 @@ def test_old_briefing_keeps_playing_while_it_is_remade():
     clock = Fake(0.0)
     now = Fake(datetime(2026, 1, 2, 8))
     cache, _ = make_cache(now, clock=clock)
-    stand_in = Briefing(Speech("no weather"), "", MORNING, made_at=0, complete=False)
+    stand_in = Briefing(Speech("no weather"), MORNING, made_at=0, complete=False)
     cache._ready[MORNING] = stand_in
     clock.value = 500  # long past the 2 minutes: due for remaking...
     assert cache.next_to_build() == MORNING
@@ -138,10 +138,10 @@ def test_old_briefing_keeps_playing_while_it_is_remade():
 
 def test_quick_version_is_kept_but_never_replaces_claudes():
     cache, _ = make_cache(Fake(datetime(2026, 1, 2, 8)))
-    claudes = Briefing(Speech("Claude"), "", MORNING, 0, True)
-    quick = Briefing(Speech("quick"), "", MORNING, 0, False)
+    claudes = Briefing(Speech("Claude"), MORNING, 0, True)
+    quick = Briefing(Speech("quick"), MORNING, 0, False)
     cache.offer(quick)
     assert cache.take(timeout=0) is quick
     cache._ready[MORNING] = claudes  # what the worker does when Claude is done
-    cache.offer(Briefing(Speech("quick again"), "", MORNING, 0, False))
+    cache.offer(Briefing(Speech("quick again"), MORNING, 0, False))
     assert cache.take(timeout=0) is claudes

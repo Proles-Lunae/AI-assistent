@@ -83,17 +83,20 @@ If you clap and nothing prints at all, it isn't hearing you:
 ## How it works
 
 ```
-microphone ──► clap_detector.py ──two claps──► weather.py (Open-Meteo)
-                                                    │
-                                                    ▼
-speakers ◄── voice.py (British voice) ◄── brain.py (claude -p, your login)
+microphone.py ──► clap_detector.py ──two claps──► weather.py (Open-Meteo)
+                                                       │
+                                                       ▼
+speakers ◄── voice.py (British voice) ◄───── brain.py (claude -p, your login)
 ```
 
 | File | Job |
 | --- | --- |
+| `assistant/microphone.py` | Chooses the microphone, records from it, and runs `--levels` and `--devices` |
 | `assistant/clap_detector.py` | Spots short, sharp sounds and checks the gap between two of them |
+| `assistant/timeframes.py` | The three time frames and their standard greetings, in one table |
 | `assistant/weather.py` | Finds your location (or city) and fetches the hourly forecast for a time frame |
-| `assistant/brain.py` | Time frames, standard greetings, and asking Claude for the weather briefing |
+| `assistant/brain.py` | Asks Claude for the weather briefing |
+| `assistant/briefing.py` | Prepares each time frame's greeting and forecast ahead of time |
 | `assistant/voice.py` | Turns text into speech and plays it |
 | `assistant/main.py` | Ties everything together and handles the command options |
 | `assistant/config.py` | Default settings, and loading `config.toml` |

@@ -11,9 +11,10 @@ import json
 import re
 import shutil
 import subprocess
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from .config import BrainSettings
+from .timeframes import GREETINGS, frame_end, time_of_day
 from .weather import WeatherReport
 
 PERSONA = (
@@ -24,61 +25,19 @@ PERSONA = (
     "Keep replies short and natural."
 )
 
-# The day is split into three time frames, each with its own greeting.
-# (name, first hour, end hour, greeting)
-TIME_FRAMES = (
-    ("morning", 3, 11, "Good morning"),
-    ("afternoon", 11, 18, "Good afternoon"),
-    ("evening", 18, 3, "Good evening"),  # runs past midnight until 3am
-)
-GREETINGS = {name: greeting for name, _, _, greeting in TIME_FRAMES}
-NO_WEATHER = "I'm afraid I can't reach the weather service at the moment."
-
 
 class BrainError(RuntimeError):
     pass
 
 
-def time_of_day(now: datetime) -> str:
-    """'morning' (3am-11am), 'afternoon' (11am-6pm) or 'evening' (6pm-3am)."""
-    if 3 <= now.hour < 11:
-        return "morning"
-    if 11 <= now.hour < 18:
-        return "afternoon"
-    return "evening"
-
-
-def frame_start(now: datetime) -> datetime:
-    """When the current time frame began, e.g. 6pm yesterday at 1am.
-
-    This tells one evening apart from the next, even if the computer slept
-    in between.
-    """
-    hour = {"morning": 3, "afternoon": 11, "evening": 18}[time_of_day(now)]
-    start = now.replace(hour=hour, minute=0, second=0, microsecond=0)
-    if start > now:  # after midnight: the evening started yesterday
-        start -= timedelta(days=1)
-    return start
-
-
-FRAME_HOURS = {3: 8, 11: 7, 18: 9}  # how long each frame lasts, by start hour
-
-
-def frame_end(start: datetime) -> datetime:
-    """When the time frame that began at ``start`` ends (= the next one starts)."""
-    return start + timedelta(hours=FRAME_HOURS[start.hour])
-
-
-def standard_greeting(period: str, name: str = "") -> str:
-    return GREETINGS[period] + (f", {name}" if name else "") + "."
+def first_sentence(text: str) -> str:
+    """Keep only the first sentence, in case Claude wrote more."""
+    return re.split(r"(?<=[.!?])\s+", text.strip(), maxsplit=1)[0]
 
 
 class ClaudeBrain:
     def __init__(self, settings: BrainSettings):
         self.s = settings
-
-    def available(self) -> bool:
-        return shutil.which(self.s.command) is not None
 
     def ask(self, prompt: str) -> str:
         """Send one prompt to Claude and return its reply as text."""
@@ -89,30 +48,19 @@ class ClaudeBrain:
                 f"Can't find the '{self.s.command}' command. Install Claude Code and "
                 "run 'claude' once to log in."
             )
-        # The prompt goes in through stdin, not as an argument: on Windows a
-        # multi-line argument gets cut off when claude is a .cmd script.
-        cmd = [
-            command,
-            "-p",
-            "--system-prompt",
-            PERSONA,
-            "--tools",
-            "",  # No file or shell access needed; it only has to talk.
-            "--output-format",
-            "text",
-            "--no-session-persistence",
-        ]
+        # --tools "": no file or shell access needed; it only has to talk. The
+        # last two skip start-up work a weather sentence doesn't need (MCP
+        # servers, skills and slash commands): about 0.1 s faster when measured.
+        cmd = [command, "-p", "--system-prompt", PERSONA, "--tools", "",
+               "--output-format", "text", "--no-session-persistence",
+               "--strict-mcp-config", "--disable-slash-commands"]
         if self.s.model:
             cmd += ["--model", self.s.model]
         try:
-            result = subprocess.run(
-                cmd,
-                input=prompt,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                timeout=self.s.timeout,
-            )
+            # The prompt goes in through stdin, not as an argument: on Windows a
+            # multi-line argument gets cut off when claude is a .cmd script.
+            result = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
+                                    encoding="utf-8", timeout=self.s.timeout)
         except subprocess.TimeoutExpired as exc:
             raise BrainError("Claude took too long to answer") from exc
         reply = result.stdout.strip()
@@ -124,20 +72,14 @@ class ClaudeBrain:
     def weather_briefing(self, weather: WeatherReport, start: datetime) -> str:
         """Ask Claude for a one-sentence forecast for the time frame at ``start``."""
         period = time_of_day(start)
-        end = frame_end(start)
         prompt = (
             f"You have just greeted the user with '{GREETINGS[period]}'. Do not greet "
             f"them again. This is for {start:%A} {period}.\n"
-            f"Here is the forecast for the {period} ({start:%H:%M} to {end:%H:%M}) as "
-            "JSON; temperature is at the start, high and low are for the whole period:\n"
+            f"Here is the forecast for the {period} ({start:%H:%M} to {frame_end(start):%H:%M}) "
+            "as JSON; temperature is at the start, high and low are for the whole period:\n"
             f"{json.dumps(weather.as_dict())}\n"
             f"Give the weather for the {period} in ONE short spoken sentence of at "
             "most 25 words: the conditions, the high and low, and the chance of rain. "
             "Nothing else."
         )
         return first_sentence(self.ask(prompt))
-
-
-def first_sentence(text: str) -> str:
-    """Keep only the first sentence, in case Claude wrote more."""
-    return re.split(r"(?<=[.!?])\s+", text.strip(), maxsplit=1)[0]
