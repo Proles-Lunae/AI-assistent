@@ -27,7 +27,8 @@ cooldown = 3.0
 enabled = true            # after greeting you, listen for a question and answer it
 model = "base"            # speech recognition: "tiny" (fastest), "base", "small" (most accurate)
 language = "en"           # the language you speak; "" = detect it
-wait_seconds = 6.0        # how long she waits for you to start talking
+end_after_quiet = 0       # 0 = keep talking until you say "stop" or "goodbye";
+                          # or a number of seconds of quiet after which she stops
 silence_seconds = 1.0     # this much quiet means you've finished
 max_seconds = 15.0        # longest question
 speech_ratio = 3.0        # how much louder than the room your voice must be...

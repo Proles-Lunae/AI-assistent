@@ -77,14 +77,17 @@ Press **Ctrl+C** to stop.
 After the greeting you hear a short **beep**: she's listening. Ask your question
 normally; she notices when you've stopped (about a second of quiet), and answers
 after a few seconds of thinking. Then she beeps again for a follow-up question,
-and remembers what you talked about. Say **"thanks"** or **"goodbye"**, or just
-stay quiet for 6 seconds, and she goes back to waiting for claps.
+and remembers what you talked about. Take as long as you like between questions:
+she keeps listening until you **tell her to stop**, by saying "stop", "goodbye",
+"thanks", "that's all" or "go to sleep". Then she goes back to waiting for claps.
 
 Settings are under `[listen]` in `config.toml`:
 
 - If she doesn't notice you talking, lower `min_level` (e.g. to `0.003`).
 - If she cuts you off mid-sentence, raise `silence_seconds` (e.g. to `1.5`).
 - For better recognition, set `model = "small"` (slower); for speed, `"tiny"`.
+- To have her also stop when you've been quiet a while, set `end_after_quiet`
+  to a number of seconds (e.g. `30`).
 - To turn listening off, set `enabled = false`.
 
 She can't look things up on the internet, so she answers from Claude's own

@@ -18,12 +18,16 @@ from .config import ListenSettings
 WHISPER_RATE = 16000  # Whisper expects 16 kHz audio
 
 
+class MicrophoneStopped(RuntimeError):
+    """The microphone stopped sending audio (unplugged, or taken by another app)."""
+
+
 def record_question(blocks: queue.Queue, sample_rate: int, settings: ListenSettings):
     """Record from ``blocks`` until you stop talking.
 
     Waits up to ``wait_seconds`` for you to start, then stops after
     ``silence_seconds`` of quiet (or ``max_seconds`` in total). Returns the
-    audio as one array, or None if you didn't say anything.
+    audio as one array, or None if you didn't say anything in that time.
     """
     block_seconds = None
     heard: list[np.ndarray] = []
@@ -35,7 +39,7 @@ def record_question(blocks: queue.Queue, sample_rate: int, settings: ListenSetti
         try:
             block = blocks.get(timeout=1.0)
         except queue.Empty:
-            return None  # the microphone stopped sending audio
+            raise MicrophoneStopped("no sound from the microphone for a second") from None
         block_seconds = block_seconds or len(block) / sample_rate
         level = float(np.sqrt(np.mean(np.square(block)))) if len(block) else 0.0
         if noise is None:

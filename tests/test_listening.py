@@ -51,10 +51,13 @@ def test_long_speech_is_cut_off_at_max_seconds():
     assert len(audio) / RATE <= 5.2
 
 
-def test_microphone_going_quiet_entirely_ends_recording(monkeypatch):
+def test_microphone_going_quiet_entirely_is_reported(monkeypatch):
+    from assistant.listening import MicrophoneStopped
+
     q = queue.Queue()  # no audio at all arrives
     monkeypatch.setattr(q, "get", lambda timeout=None: (_ for _ in ()).throw(queue.Empty()))
-    assert record_question(q, RATE, ListenSettings()) is None
+    with pytest.raises(MicrophoneStopped):
+        record_question(q, RATE, ListenSettings())
 
 
 def test_resampled_for_whisper():
@@ -98,12 +101,17 @@ def test_real_questions_are_not_goodbyes(text):
     assert not is_goodbye(text)
 
 
-def make_talker(monkeypatch, said, answers=None, brain_fails=False):
-    """An Assistant whose microphone 'hears' ``said`` (None = silence) in turn."""
+def make_talker(monkeypatch, said, answers=None, brain_fails=False, **listen):
+    """An Assistant whose microphone 'hears' ``said`` (None = silence) in turn.
+
+    When ``said`` runs out, the microphone 'stops', which ends the conversation."""
     from assistant import main
     from assistant.brain import BrainError
 
-    a = main.Assistant(Config())
+    config = Config()
+    for key, value in listen.items():
+        setattr(config.listen, key, value)
+    a = main.Assistant(config)
     spoken, asked = [], []
     a.speaker.prepare = lambda text: SimpleNamespace(text=text, samples=None)
     a.speaker.play = lambda speech, wait=True: spoken.append(speech.text)
@@ -113,7 +121,11 @@ def make_talker(monkeypatch, said, answers=None, brain_fails=False):
     heard = []
 
     def fake_record(blocks, rate, settings):
-        text = next(turns, None)
+        from assistant.listening import MicrophoneStopped
+
+        text = next(turns, "<end>")
+        if text == "<end>":
+            raise MicrophoneStopped("end of test")
         heard.append(text)
         return None if text is None else np.array([0.1], np.float32)
 
@@ -167,13 +179,32 @@ def test_claude_unavailable_is_explained(monkeypatch):
 
     a, spoken, _ = make_talker(monkeypatch, ["What's the time?"], brain_fails=True)
     a.converse(queue.Queue())
-    assert spoken == ["<beep>", NO_BRAIN]
+    assert spoken == ["<beep>", NO_BRAIN, "<beep>"]  # she apologises and keeps listening
 
 
-def test_silence_right_away_ends_quietly(monkeypatch):
-    a, spoken, asked = make_talker(monkeypatch, [None])
+def test_silence_does_not_end_the_conversation(monkeypatch):
+    from assistant.main import GOODBYE
+
+    # a whole minute of quiet, then a question, then "stop"
+    a, spoken, asked = make_talker(monkeypatch, [None] * 10 + ["What's the time?", "Stop."])
     a.converse(queue.Queue())
-    assert spoken == ["<beep>"] and asked == []
+    assert spoken == ["<beep>", "Answer to: What's the time?", "<beep>", GOODBYE]
+    assert [q for q, *_ in asked] == ["What's the time?"]
+
+
+def test_she_can_still_be_set_to_stop_after_quiet(monkeypatch):
+    a, spoken, asked = make_talker(monkeypatch, [None, None, "Hello?"],
+                                   end_after_quiet=12, wait_seconds=6)
+    a.converse(queue.Queue())
+    assert spoken == ["<beep>"] and asked == []  # stopped after 12 s, before "Hello?"
+
+
+@pytest.mark.parametrize("text", ["Stop.", "Go to sleep.", "That's enough, thanks.",
+                                  "That will be all.", "You can go now."])
+def test_ways_of_telling_her_to_stop(text):
+    from assistant.main import is_goodbye
+
+    assert is_goodbye(text)
 
 
 def test_claude_prompt_has_context_history_and_question(monkeypatch):

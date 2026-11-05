@@ -60,7 +60,11 @@ class ListenSettings:
     # Whisper model: "tiny" (fastest), "base", "small" (more accurate, slower).
     model: str = "base"
     language: str = "en"  # the language you speak; "" = let Whisper work it out
-    wait_seconds: float = 6.0  # how long to wait for you to start talking
+    # The conversation goes on until you tell her to stop ("stop", "goodbye",
+    # "thanks"...). Set this to a number of seconds to also end it when you've
+    # been quiet that long; 0 = never.
+    end_after_quiet: float = 0.0
+    wait_seconds: float = 6.0  # how often she checks whether to stop waiting
     silence_seconds: float = 1.0  # this much quiet means you've finished
     max_seconds: float = 15.0  # longest question
     # Speech must be this many times louder than the room's background noise,

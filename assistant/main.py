@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .brain import BrainError, ClaudeBrain
 from .config import Config, ConfigError, load_config
-from .listening import Transcriber, drain, record_question
+from .listening import MicrophoneStopped, Transcriber, drain, record_question
 from .microphone import choose_microphone, list_devices, listen, recording, show_levels
 from .timeframes import GREETINGS, frame_end, frame_start, standard_greeting, time_of_day
 from .voice import Speaker, Speech
@@ -21,10 +21,11 @@ NO_WEATHER = "I'm afraid I can't reach the weather service at the moment."
 WEATHER_WAIT = 15.0  # seconds; after this, give up on the weather for this clap
 DIDNT_CATCH = "Sorry, I didn't catch that."
 NO_BRAIN = "I'm sorry, I can't think straight at the moment. Please try again later."
-GOODBYE = "You're welcome. Just clap if you need me."
+GOODBYE = "Very well. Just clap if you need me."
 # Saying one of these (on its own, or in a short sentence) ends the conversation.
 GOODBYE_WORDS = ("thank you", "thanks", "goodbye", "bye", "that's all", "that is all",
-                 "nothing", "no thanks", "stop", "never mind")
+                 "nothing", "no thanks", "stop", "never mind", "go to sleep",
+                 "that's enough", "that will be all", "that'll be all", "you can go")
 
 
 class Assistant:
@@ -68,24 +69,37 @@ class Assistant:
         self.speaker.play(speech)
 
     def converse(self, blocks) -> None:
-        """Listen for questions and answer them, until you're done or go quiet."""
+        """Listen for questions and answer them, until you tell her to stop."""
         rate = self.config.clap.sample_rate
+        settings = self.config.listen
         history: list[tuple[str, str]] = []
+        ready_beep = True  # beep when she starts listening, and after each answer
+        quiet_for = 0.0
         while True:
-            self.speaker.beep()
-            drain(blocks)  # forget what the microphone heard while she was talking
-            print("Listening to you... (just stay quiet to stop)")
-            audio = record_question(blocks, rate, self.config.listen)
-            if audio is None:
-                print("(Nothing heard.)")
+            if ready_beep:
+                self.speaker.beep()
+                drain(blocks)  # forget what the microphone heard while she was talking
+                print('Listening to you... (say "stop" or "goodbye" when you\'re done)')
+                ready_beep, quiet_for = False, 0.0
+            try:
+                audio = record_question(blocks, rate, settings)
+            except MicrophoneStopped as exc:
+                print(f"(Stopped listening: {exc})")
                 return
+            if audio is None:  # nothing said yet: keep waiting quietly
+                quiet_for += settings.wait_seconds
+                if settings.end_after_quiet and quiet_for >= settings.end_after_quiet:
+                    print("(Quiet for a while; back to waiting for claps.)")
+                    return
+                continue
             try:
                 question = self.transcriber.transcribe(audio, rate)
             except Exception as exc:  # e.g. faster-whisper not installed
                 print(f"(Couldn't turn your speech into text: {exc})")
                 return
+            ready_beep = True
             if not question:
-                self.speaker.say(self.recording(DIDNT_CATCH).text)
+                self.speaker.play(self.recording(DIDNT_CATCH))
                 continue
             print(f"You: {question}")
             if is_goodbye(question):
@@ -98,7 +112,7 @@ class Assistant:
             except BrainError as exc:
                 print(f"(Claude couldn't answer: {exc})")
                 self.speaker.play(self.recording(NO_BRAIN))
-                return
+                continue  # she can still be asked again, or told to stop
             history.append((question, answer))
             self.speaker.say(answer)
 
