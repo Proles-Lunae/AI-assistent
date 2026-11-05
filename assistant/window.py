@@ -187,10 +187,6 @@ class Orb(QWidget):
         self.timer.timeout.connect(self._tick)
         self.timer.start(33)  # about 30 frames a second
 
-    def set_name(self, name: str) -> None:
-        self.name = name
-        self.update()
-
     def set_state(self, state: str) -> None:
         if state != self.state:
             self.ripple = 1.0
@@ -239,17 +235,27 @@ class Orb(QWidget):
         radius = self._radius(base)
         background = QColor(BACKGROUND)
 
+        # Everything around the circle stays inside this round area, so the glow
+        # and rings fade out softly instead of being cut off at the widget's edges.
+        room = min(self.width(), self.height()) / 2 - 2
+
         # A soft glow around the circle, stronger while she listens to you.
         strength = 95 + 70 * self.level + 90 * self.flash
-        glow = QRadialGradient(centre, radius * 2.0)
+        reach = min(radius * 2.0, room)
+        glow = QRadialGradient(centre, reach)
         glow.setColorAt(0.0, faded(self.deep, strength))
         glow.setColorAt(0.55, faded(self.deep, strength * 0.35))
         glow.setColorAt(1.0, faded(self.deep, 0))
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(glow)
-        p.drawEllipse(centre, radius * 2.0, radius * 2.0)
+        p.drawEllipse(centre, reach, reach)
 
+        area = QPainterPath()
+        area.addEllipse(centre, room, room)
+        p.save()
+        p.setClipPath(area)
         self._paint_rings(p, centre, radius)
+        p.restore()
 
         # The disc: deep in the middle, coloured towards the rim, so her name reads well.
         disc = QRadialGradient(centre - QPointF(radius * 0.25, radius * 0.3), radius * 1.45)
