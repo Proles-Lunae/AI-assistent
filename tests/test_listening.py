@@ -199,3 +199,23 @@ def test_listening_can_be_switched_off(tmp_path):
     path.write_text("[listen]\nenabled = false\nlanguage = \"de\"\n")
     config = load_config(path)
     assert config.listen.enabled is False and config.listen.language == "de"
+
+
+def test_model_download_warnings_are_hidden(monkeypatch):
+    import logging
+    import os
+    import warnings
+
+    from assistant.listening import quiet_model_download
+
+    monkeypatch.delenv("HF_HUB_DISABLE_SYMLINKS_WARNING", raising=False)
+    monkeypatch.delenv("HF_HUB_VERBOSITY", raising=False)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        quiet_model_download()
+        warnings.warn_explicit("symlinks not supported", UserWarning,
+                               "file_download.py", 149, module="huggingface_hub.file_download")
+    assert caught == []
+    assert os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] == "1"
+    assert os.environ["HF_HUB_VERBOSITY"] == "error"
+    assert logging.getLogger("huggingface_hub").level == logging.ERROR

@@ -73,6 +73,20 @@ def drain(blocks: queue.Queue) -> None:
         blocks.get_nowait()
 
 
+def quiet_model_download() -> None:
+    """Hide harmless warnings from the model download (huggingface_hub) on Windows:
+    that it can't use symlinks (it stores a plain copy instead) and that it's
+    downloading without an account (none is needed)."""
+    import logging
+    import os
+    import warnings
+
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    os.environ.setdefault("HF_HUB_VERBOSITY", "error")  # read when the library loads
+    warnings.filterwarnings("ignore", module="huggingface_hub")
+    logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+
+
 class Transcriber:
     """Turns recorded speech into text with Whisper, on your own computer."""
 
@@ -83,8 +97,10 @@ class Transcriber:
     def load(self) -> None:
         """Load (and the first time, download) the model. Takes a few seconds."""
         if self._model is None:
+            quiet_model_download()
             from faster_whisper import WhisperModel
 
+            print("(Loading speech recognition; the first time it downloads about 140 MB...)")
             started = time.monotonic()
             self._model = WhisperModel(self.s.model, device="cpu", compute_type="int8")
             print(f"(Speech recognition ready after {time.monotonic() - started:.1f} s)")
