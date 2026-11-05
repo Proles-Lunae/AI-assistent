@@ -19,7 +19,7 @@ from .brain import (
 )
 from .briefing import Briefing, BriefingCache
 from .clap_detector import DoubleClapDetector, list_devices, show_levels
-from .config import Config, load_config
+from .config import Config, ConfigError, load_config
 from .voice import Speaker, Speech
 from .weather import get_weather
 
@@ -33,7 +33,7 @@ class Assistant:
         self.greetings: dict[str, Speech] = {}
 
     def greeting_text(self, period: str) -> str:
-        return standard_greeting(period, self.config.user.name)
+        return standard_greeting(period, self.config.user.address())
 
     def weather_text(self, start: datetime) -> tuple[str, bool]:
         """Return (forecast for the frame at ``start``, whether weather was included)."""
@@ -113,7 +113,12 @@ def main() -> None:
     parser.add_argument("--say", metavar="TEXT", help="just speak TEXT (to test the voice)")
     args = parser.parse_args()
 
-    config = load_config(args.config)
+    try:
+        config = load_config(args.config, report=True)
+    except ConfigError as exc:
+        print(exc)
+        return
+    print(f'She will call you: "{config.user.address()}"')
     assistant = Assistant(config)
     try:
         if args.devices:

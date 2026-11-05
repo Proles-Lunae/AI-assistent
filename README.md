@@ -47,7 +47,8 @@ You need **Python 3.11 or newer**, a microphone, speakers, and
 
 3. Make sure Claude Code is logged in. Run `claude` once and follow the login steps.
 
-4. Optional: copy `config.example.toml` to `config.toml` and set your name. The
+4. Optional: copy `config.example.toml` to `config.toml` to change settings. She
+   calls you "sir" by default; set `name` under `[user]` to change that. The
    weather is for your location, worked out automatically from your internet
    connection (roughly your city; with a VPN on, the VPN's location). To use a
    specific place instead, set `city` under `[weather]`, e.g. `city = "Berlin"`.

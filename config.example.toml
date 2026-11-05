@@ -2,7 +2,7 @@
 # Anything you leave out keeps its default.
 
 [user]
-name = ""                 # e.g. "Luca", so the assistant greets you by name
+name = "sir"              # what she calls you: "Good morning, sir."
 
 [weather]
 city = ""                 # "" = find your location automatically, or a city like "Berlin"

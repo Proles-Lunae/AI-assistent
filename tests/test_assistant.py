@@ -305,3 +305,50 @@ def test_forecast_covers_only_the_time_frame():
     assert afternoon["temperature"] == 9  # at the start of the frame
     evening = summarise_hours(hourly, datetime(2026, 1, 2, 18), datetime(2026, 1, 3, 3))
     assert evening["description"] == "clear sky" and evening["rain_chance"] == 0
+
+
+def test_she_calls_you_sir_by_default():
+    from assistant.config import Config, UserSettings
+
+    assert Config().user.address() == "sir"
+    assert UserSettings(name="").address() == "sir"
+    assert UserSettings(name="  ").address() == "sir"
+    assert standard_greeting("morning", Config().user.address()) == "Good morning, sir."
+
+
+def test_config_written_by_notepad_with_bom(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_bytes(b'\xef\xbb\xbf[user]\r\nname = "Luca"\r\n')
+    assert load_config(path).user.address() == "Luca"
+
+
+def test_config_sections_and_keys_ignore_capitals(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[User]\nName = "Luca"\n')
+    assert load_config(path).user.address() == "Luca"
+
+
+def test_config_mistake_gets_a_clear_message(tmp_path):
+    import pytest
+
+    from assistant.config import ConfigError
+
+    path = tmp_path / "config.toml"
+    path.write_text("[user]\nname = Luca\n")  # missing quotes
+    with pytest.raises(ConfigError, match="quotes"):
+        load_config(path)
+
+
+def test_hidden_txt_extension_is_pointed_out(tmp_path, capsys):
+    (tmp_path / "config.toml.txt").write_text('[user]\nname = "Luca"\n')
+    config = load_config(tmp_path / "config.toml", report=True)
+    out = capsys.readouterr().out
+    assert "ren config.toml.txt config.toml" in out
+    assert config.user.address() == "sir"
+
+
+def test_startup_says_which_settings_file_is_used(tmp_path, capsys):
+    path = tmp_path / "config.toml"
+    path.write_text('[user]\nname = "sir"\n')
+    load_config(path, report=True)
+    assert f"Settings loaded from {path}" in capsys.readouterr().out

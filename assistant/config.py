@@ -16,7 +16,11 @@ DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config.toml"
 
 @dataclass
 class UserSettings:
-    name: str = ""  # How the assistant addresses you. Empty = no name.
+    # What the assistant calls you, e.g. "Good morning, sir." Empty = "sir".
+    name: str = "sir"
+
+    def address(self) -> str:
+        return self.name.strip() or "sir"
 
 
 @dataclass
@@ -82,6 +86,7 @@ class Config:
 def _apply(section: object, values: dict) -> None:
     known = {f.name: f for f in fields(section)}
     for key, value in values.items():
+        key = key.lower()
         if key not in known:
             # Warn rather than crash, so old config files keep working.
             print(f"(Ignoring unknown setting '{key}' in config.toml)")
@@ -90,19 +95,48 @@ def _apply(section: object, values: dict) -> None:
         # Allow ints in the file where floats are expected (e.g. cooldown = 3).
         if isinstance(current, float) and isinstance(value, int):
             value = float(value)
+        elif isinstance(current, str) and not isinstance(value, str):
+            value = str(value)
         setattr(section, key, value)
 
 
-def load_config(path: Path | None = None) -> Config:
-    """Load settings from a TOML file, falling back to defaults."""
+class ConfigError(ValueError):
+    pass
+
+
+def load_config(path: Path | None = None, report: bool = False) -> Config:
+    """Load settings from a TOML file, falling back to defaults.
+
+    With ``report``, says which file was used, so it's obvious when your
+    settings aren't being picked up.
+    """
     config = Config()
     path = path or DEFAULT_CONFIG_PATH
     if not path.exists():
+        if report:
+            print(f"No settings file found at {path}, using the default settings.")
+            hidden_txt = path.with_name(path.name + ".txt")
+            if hidden_txt.exists():
+                print(
+                    f"  Found {hidden_txt.name} instead: Windows added '.txt' to the name. "
+                    f"Rename it with:  ren {hidden_txt.name} {path.name}"
+                )
         return config
-    with path.open("rb") as fh:
-        data = tomllib.load(fh)
+    # "utf-8-sig" also accepts the invisible marker (BOM) some editors add.
+    text = path.read_text(encoding="utf-8-sig")
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(
+            f"There's a mistake in {path}: {exc}.\n"
+            'Text values need quotes, e.g.  name = "sir"  and  city = "Berlin"'
+        ) from exc
     for section_name, values in data.items():
-        if not hasattr(config, section_name):
-            raise ValueError(f"Unknown section [{section_name}] in {path}")
-        _apply(getattr(config, section_name), values)
+        section = getattr(config, section_name.lower(), None)
+        if section is None or not isinstance(values, dict):
+            print(f"(Ignoring unknown section [{section_name}] in config.toml)")
+            continue
+        _apply(section, values)
+    if report:
+        print(f"Settings loaded from {path}")
     return config
