@@ -4,3 +4,5 @@ __pycache__/
 venv/
 .pytest_cache/
 config.toml
+# Temporary copies made by Claude Code workflows
+.claude/worktrees/
